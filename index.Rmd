@@ -1,0 +1,80 @@
+--- 
+title: "Estadística Multivariada"
+author: "María Teresa Ortiz, Felipe González"
+site: bookdown::bookdown_site
+documentclass: book
+bibliography: [book.bib]
+biblio-style: apalike
+link-citations: yes
+github-repo: tereom/est-multivariada
+description: "Curso de estadística multivariada, Maestría en Ciencia de Datos, ITAM 2019."
+---
+
+
+# Información del curso {-}
+
+Notas del curso *Estadística Multivariada* del programa de maestría en 
+Ciencia de Datos del ITAM. Las notas fueron desarrolladas en 
+2014 por Teresa Ortiz y Felipe González y actualizadas en 2015, actualmente 
+se trabaja en una segunda actualización. En caso de encontrar 
+errores o tener sugerencias del material se agradece la propuesta de 
+correcciones mediante [pull requests](https://github.com/tereom/est-multivariada).
+
+#### Ligas {-}
+
+Notas:   
+Correo: teresa.ortiz.mancera@gmail.com   
+GitHub: https://github.com/tereom/est-multivariada 
+
+</br>
+
+<a rel="license" href="http://creativecommons.org/licenses/by/4.0/"><img alt="Licencia Creative Commons" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/88x31.png" /></a><br />Este trabajo está bajo una <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Licencia Creative Commons Atribución 4.0 Internacional</a>.
+
+
+## Temario {-}
+
+1. Distribuciones de probabilidad multivariadas
+    + Distribución conjunta, marginal y condicional.
+	+ Independencia y factorización.
+
+Referencias: @ross
+
+2. Redes bayesianas
+	+ Representación gráfica de independencias.	
+	+ Modelos locales.
+	+ Aprendizaje de estructura de redes bayesianas.
+
+Referencias: @koller, @Whittaker, @bnlearn, @hastie
+
+3. Redes markovianas
+    + Modelos log-lineales.
+	+ Modelos gráficos gaussianos.
+
+Referencias: @wasserman, @bishop, @Whittaker
+
+4. Variables latentes	
+	+ Algoritmo Esperanza-Maximización.
+	+ Datos faltantes.
+	+ Clase latentes, mezclas gaussianas y análisis de factores.
+	+ Modelos markovianos de estados ocultos.
+
+Referencias: @wasserman
+
+5. Modelos jerárquicos
+
+Referencias: @gelman-hill, @gelman-bayesian
+
+6. Modelos para datos espaciales y temporales
+    + Estadística espacial.
+    + Modelos de espacio de estados.
+
+Referencias: @banerjee
+
+
+#### Software {-}
+
+- R: https://www.r-project.org
+- RStudio: https://www.rstudio.com
+- Stan: http://mc-stan.org
+
+
