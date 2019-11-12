@@ -1,0 +1,598 @@
+# Variables latentes y algoritmo EM
+
+En esta sección estudiaremos modelos de variable latente y el algoritmo de 
+esperanza-maximización.
+
+Veremos ejemplos de cada uno de los siguientes:
+
+Latentes/Observadas|  Métricas | Categóricas
+-------------------|-----------|-------------
+**Métricas**| Análisis de factores (FA) | Modelos de rasgos latentes (LTM)
+**Categóricas** | Modelos de perfiles latentes (LPM) | Modelos de clases latentes (LCM)
+
+
+## Recordatorio de datos faltantes
+
+1. El modelo para los datos completos está parametrizado con $\theta$:
+  $$p_{\theta}(y)$$
+
+2. El proceso de censura lo incluimos mediante el vector $I$  de indicadores de 
+faltantes ($I_{j}=1$ cuando el dato $j$  está censurado faltante), entonces si
+el modelo para el mecanismo de faltantes está parametrizado con $\psi$:
+$$p_{\psi} (I|y)$$
+
+3. Entonces generamos los datos según (1) y luego censuramos observaciones 
+según (2). Así, el modelo completo para nuestras observaciones es:
+$$p_{\theta,\psi} (y,I)=p_{\theta}(y)p_{\psi}(I|y).$$
+
+4. Escribimos $y=(y_{obs},y_{falta})$ para denotar por separado datos 
+observados y datos faltantes. De tal manera que la verosimilitud para nuestros 
+datos observados está dada  por
+$$p_{\theta,\psi}(y_{obs},I),$$
+pues sabemos los valores de las variables observadas y qué datos faltan.
+Para hacer máxima verosimilitud calculamos esta conjunta. 
+$$p_{\theta,\psi} (y_{obs},I)=\int p_{\theta,\psi} (y_{obs}, y_{falta},I)d y_{falta}$$
+$$=\int p_{\psi}(I|y_{obs},y_{falta})p_{\theta} (y_{obs}, y_{falta})d y_{falta}.$$
+Nótese que esta integral (o suma, dependiendo del caso), promedia los valores
+faltantes según el modelo de los datos $p_{\theta}$
+De la ecuación de arriba, vemos que en general tendríamos que modelar también el
+mecanismo de datos faltantes y estimar todos los parámetros. Esto es difícil no
+solamente porque hay más parámetros, sino porque en la práctica _puede ser 
+difícil proponer un modelo razonable para datos faltantes_. Preferimos
+hacer un supuesto (MCAR, MAR).
+
+5. Si se cumple MAR, entonces tenemos que
+$$p_{\psi}(I|y_{obs},y_{falta})=p_{\psi}(I|y_{obs}),$$
+y por tanto,
+$$p_{\theta,\psi} (y_{obs},I)= p_{\psi}(I|y_{obs})\int p_{\theta} (y_{obs}, y_{falta})dy_{falta}.$$
+notamos que los parámetros $\psi$ y $\theta$ están en factores separados y para
+encontrar los estimadores de máxima verosimilitud, no es necesario trabajar con 
+$\psi$ ni el mecanismo al azar. El mecanismo de faltantes es entonces ignorable. 
+
+## Algoritmo de Esperanza-Maximización (EM)
+
+Recordemos que el problema de maximización de verosimilitud se vuelve más 
+difícil en la presencia de datos faltantes.
+
+**Ejemplo.** Escogemos al azar una moneda y luego tiramos un volado con esa 
+moneda (modelo Moneda -> Sol):
+```{r}
+ej_1 <- data.frame(moneda = c('A', 'A', 'B', 'B', 'B', NA), 
+  sol = c(1, 0, 0, 0, 1, 0))
+ej_1
+```
+
+Si parametrizamos con $\theta=P(moneda=A)$, $\theta_A=P(sol|moneda=A)$ y
+ $\theta_B=P(sol|moneda=B)$, la log verosimilitud  para los datos completos es
+$$\log (\theta\theta_A) + \log(\theta(1-\theta_A)) + 2\log((1-\theta)(1-\theta_B))+
+\log((1-\theta)\theta_B)$$
+$$= 2\log\theta+3\log(1-\theta)+\log\theta_A+\log(1-\theta_A)+2\log(1-\theta_B)+\log\theta_B$$
+En este caso es fácil encontrar los estimadores de máxima verosimilitud. Ahora, 
+para incluir la contribución del caso con faltante suponemos MAR y promediamos
+los valores faltantes (como indica la fórmula en (5), cambiando la integral por 
+suma):
+
+$$p_{\theta}(x^{6}_{sol}=0 )=p_{\theta}(x^{6}_{sol}=0 |x^{6}_{moneda}=A)
+p_{\theta}(x^{6}_{moneda}=A) +  p_{\theta}(x^{6}_{sol}=0 |x^{6}_{moneda}=B)
+p_{\theta}(x^{6}_{moneda}=B),$$
+y ahora buscamos maximizar
+$$p_{\theta}(y_{obs})=2\log\theta+3\log(1-\theta)+\log\theta_A+\log(1-\theta_A)+2\log(1-\theta_B)+\log\theta_B + \log((1-\theta_A)\theta + (1-\theta_B)(1-\theta)).$$
+
+Notemos que esta expresión es más difícil de maximizar. El algoritmo EM da un 
+algoritmo iterativo para encontrar máximos locales de la verosimilitud 
+$p_{\theta} (y_{obs})$. Este algoritmo sigue una estrategia de optimización 
+motivada por la noción misma de datos faltantes y considerando la distribución
+condicional de los faltantes dado lo observado.
+
+<div class="caja">
+El algoritmo de **esperanza-maximización (EM)** es un proceso iterativo
+para maximizar verosimilitud en presencia de datos faltantes. Cada iteración 
+consiste de dos 
+pasos:
+
+* Calcular el valor esperado de la log-verosimilitud promediando sobre datos 
+faltantes con una aproximación de la solución ($\theta^{(t)}$).
+
+* Obtener una nueva aproximación maximizando la cantidad resultante en el paso
+previo.
+</div>
+
+Podemos ver que el algorimto EM que el paso de esperanza consiste en un 
+_soft assignment_ de cada valor faltante de acuerdo al modelo de los datos y 
+los datos observados.
+
+Denotemos por $\theta^{(t)}$ el maximizador estimado en la iteración $t$ 
+($t=0,1,...$). En lugar de tratar directamente con 
+$\log p_{\theta}(y_{obs})=\log p(y_{obs}\theta)$ el algoritmo EM trabaja sobre $Q(\theta \vert \theta^{(t)})$ que definimos como la
+esperanza de la log-verosimilitud de los datos completos $y=(y_{obs},y_{falta})$
+condicional a los datos observados $y_{obs}$:
+
+$$Q(\theta \vert \theta^{(t)})=E\big[\log\mathcal{L}(\theta|y) \big|y_{obs}, \theta^{(t)}\big]$$
+
+$$=E \big[\log p(y|\theta) \big |y_{obs}, \theta^{(t)}\big]$$
+
+$$=\int_{y_{falta}} [\log p(y|\theta)] p(y_{falta}|y_{obs}, \theta^{(t)})dy_{falta}.$$
+
+Es así que en el **paso esperanza** calculamos 
+$$Q(\theta|\theta^{(t)})$$
+y en el **paso maximización**:
+$$\theta^{(t+1)} = argmax_{\theta}Q(\theta|\theta^{(t)})$$
+
+
+
+__Ejemplo.__ En nuestro ejemplo anterior, haríamos lo siguiente. Primero 
+definimos la función que calcula el esperado de la log verosimilitud:
+
+```{r}
+# logLik: verosimilitude de datos completos
+logLik <- function(theta){
+  2 * log(theta[1]) + 3 * log(1 - theta[1]) + log(theta[2]) + log(1 - theta[2]) +
+    log(theta[3]) + 2 * log(1 - theta[3]) 
+}
+
+pasoEsperanza <- function(theta_ant){
+  function(theta){
+    # a = p(moneda=A|sol=1, theta_ant)
+    # b = p(moneda=B|sol=1, theta_ant)
+    a_0 <- theta_ant[1] * (1 - theta_ant[2])
+    b_0 <- (1 - theta_ant[1]) * (1 - theta_ant[3])
+    a <- a_0 / (a_0 + b_0)
+    b <- b_0 / (a_0 + b_0)
+    logLik(theta) + log(theta[1] * (1 - theta[2])) * a + 
+      log((1 - theta[1]) * (1 - theta[3])) * b
+  }
+}
+```
+
+Ahora escogemos una solución inicial y calculamos el esperado
+
+```{r}
+theta_0 <- c(0.1, 0.1, 0.1)
+esperanza_0 <- pasoEsperanza(theta_0)
+```
+
+Optimizamos este valor esperado:
+
+```{r}
+max_1 <- optim(c(0.5, 0.5, 0.5), esperanza_0, control = list(fnscale = -1))
+theta_1 <- max_1$par
+theta_1
+esperanza_1 <- pasoEsperanza(theta_1)
+max_2 <- optim(c(0.5, 0.5, 0.5), esperanza_1,control=list(fnscale=-1) )
+theta_2 <- max_2$par
+theta_2
+esperanza_2 <- pasoEsperanza(theta_2)
+max_3 <- optim(c(0.5, 0.5, 0.5), esperanza_2,control=list(fnscale=-1) )
+theta_3 <- max_3$par
+theta_3
+```
+
+
+Y vemos que recuperamos la misma solución que en el caso de maximizar usando la
+función _optim_.
+
+Veamos porque funciona trabajar con $Q(\theta|\theta^{(t)})$. Si escribimos:
+$$ p(y_{obs}|\theta)=\frac{p(y|\theta)}{p(y_{falta}|y_{obs},\theta)}.$$
+
+Tomando logaritmos,
+$$\log{p}(y_{obs}|\theta)=\log{p}(y|\theta)-log{p}(y_{falta}|y_{obs}, \theta).$$
+
+Y tomando el valor esperado con respecto la distribuión de 
+$y_{falta}|y_{obs}$ con parámetro $\theta^{(t)}$ (que consideramos como una 
+aproximación de los verdaderos parámetros), obtenemos:
+
+$$E\big[\log p(y_{obs}|\theta)\big | y_{obs}, \theta^{(t)}\big]=
+E\big[\log p(y|\theta)\big | y_{obs}, \theta^{(t)}\big] -
+E\big[\log p(y_{falta}|\theta)\big | y_{obs}, \theta^{(t)}\big]$$
+
+$$=\int_{y_{falta}}[\log p(y|\theta)] p(y_{falta}|y_{obs}, \theta^{(t)})dy_{falta} - \int_{y_{falta}}[\log{p}(y_{falta}| y_{obs},\theta)]p(y_{falta}|y_{obs},\theta^{(t)})dy_{falta}$$
+$$= Q(\theta|\theta^{(t)}) - H(\theta|\theta^{(t)})$$
+
+La igualdad anterior es cierta para cualquier valor de $\theta$, en particular, 
+$\theta=\theta^{(t)}$ por lo que:
+$$\log{p}(y_{obs}|\theta) -\log{p}(y_{obs}|\theta^{(t)})= Q(\theta|\theta^{(t)}) -
+Q(\theta^{(t)}|\theta^{(t)}) - [H(\theta|\theta^{(t)}) - H(\theta^{(t)}|\theta^{(t)})]$$
+utilizando la desigualdad de Jensen se puede demostrar que $H(\theta|\theta^{(t)}) \leq  H(\theta^{(t)}|\theta^{(t)})$,  por lo que (en términos de la verosimilutd)
+$$\log\mathcal{L}(\theta|y_{obs}) -\log\mathcal{L}(\theta^{(t)}|t_{obs}) \geq Q(\theta|\theta^{(t)}) - Q(\theta^{(t)}|\theta^{(t)})$$
+y vemos que si incrementamos $Q(\theta|\theta^{(t)})$ entonces también incrementamos $\mathcal{L}(\theta|y_{obs})$.
+
+### Observaciones del algoritmo EM
+
+* El algoritmo EM es una generalización natural de la estiamación por 
+máxima verosimilitud cuando hay presencia de datos faltantes.
+
+* El problema de maximización que ataca EM es más complejo que el problema 
+de máxima verosimilitud con datos completos. En el caso usual $\log p(x|\theta)$
+tiene un único máximo global que muchas veces se puede encontrar de forma 
+cerrada, por su parte la verosimilitud con datos faltantes tiene muchos 
+máximos locales y no tiene solución cerrada.
+
+* El algoritmo EM reduce el problema de múltiples máximos a una secuencia de
+_subproblemas_ ($Q(\theta|\theta^{(t)}$) cada uno con un único máximo global.  
+Estos subproblemas son tales que se garantiza convergencia de las soluciones
+$\theta^{(1)}, \theta^{(2)}, ...$ a un máximo, pues a cada paso se incrementa
+monótonamente el valor de la log-verosimilitud de los datos observados. 
+
+* El algoritmo EM garantiza convergencia __únicamente__ a un máximo local pues 
+la secuencia de $\theta^{(t)}$ depende del valor con el que se inicializa el 
+proceso $\theta^{(1)}$. Por tanto, es conveniente repetir el algoritmo con 
+varios valores iniciales.
+
+* Una manera de entender el algoritmo EM es pensar que en cada paso de esperanza
+_imputas_ los faltantes, sin embargo, en lugar de una imputación dura se realiza
+un _soft assignment_ de cada valor faltante. El _soft assignment_ se calcula
+obteniendo la probabilidad de cada alternativa para el valor faltante (usando el
+parámetro $\theta^{(t)})$) para crear una base de datos ponderada que considera 
+todos los posibles escenarios de los faltantes. Al usar los valores esperados
+(o datos ponderados) en lugar de realizar una imputación dura el algoritmo 
+toma en cuenta la confianza del modelo cada vez que _completa_ los datos.
+
+## Variables latentes
+Un caso importante de datos faltantes es cuando una variable está totalmente
+censurada. Esto puede suceder por dos razones:
+
+* Alguna variable claramente importante está totalmente censurada (por ejemplo, 
+peso en un estudio de consumo de calorías).
+
+* Cuando buscamos añadir estructura a nuestro modelo para simplificar su 
+estimación, interpretación o forma. Por ejemplo: hacer grupos de actitudes ante 
+la comida y el ejercicio para explicar con una sola variable el consumo de 
+comida chatarra (por ejemplo, análisis de factores).
+
+En estos casos, estas variables se llaman _variables latentes_, pues 
+consideramos que tienen un efecto que observamos a través de otras variables, 
+pero no podemos observar directamente los valores de esta variable.
+
+<div class="clicker">
+![](img/manicule2.jpg) ¿Cuál es el supuesto apropiado acerca 
+de este tipo de valores censurados (variables latentes)?
+
+a. MCAR   
+b. MAR     
+c. MNAR  
+d. Ninguno de estos
+
+</div>
+
+La siguiente tabla es una clasificación de los modelos de variable latente
+de acuerdo a la métrica de las variables latentes y observadas.
+
+Latentes/Observadas|  Métricas | Categóricas
+-------------------|-----------|-------------
+**Métricas**| Análisis de factores (FA) | Modelos de rasgos latentes (LTM)
+**Categóricas** | Modelos de perfiles latentes (LPM) | Modelos de clases latentes (LCM)
+
+<!--
+El supuesto apropiado acerca de este tipo de valores censurados es MCAR: 
+la censura tiene probabilidad 1, así que es independiente de cualquier otra 
+variable.
+-->
+
+### Modelos de perfiles latentes: Mezcla de normales
+El ejemplo más clásico de variables latentes es el de mezcla de normales.
+
+**Ejemplo.** Modelo de mezcla de dos normales. Consideremos los siguientes 
+datos:
+
+```{r}
+library(ggplot2)
+set.seed(280572)
+N <- 800
+n <- sum(rbinom(N, 1, 0.6))
+
+x_1 <- rnorm(N - n, 0, 0.5)
+x_2 <- rnorm(n, 2, 0.3)
+qplot(c(x_1, x_2))
+```
+
+Estos datos tienen una estructura bimodal. Es poco apropiado modelar estos datos 
+con un modelo normal $(\mu,\sigma^2)$.
+
+Podemos entonces modelar pensando que los datos vienen de dos clases, cada una 
+con una distribución normal pero con distintos parámetros. ¿Cómo ajustaríamos 
+tal modelo?
+
+<div class="caja">
+La variable aleatoria $X$ es una mezcla de normales si
+$$p(x)=\sum_{k=1}^K \pi_k \phi_{\theta_k}(x)$$
+donde $\phi_{\theta_k}$ es una densidad normal con parámetros 
+$\theta_k=(\mu_k, \sigma_k)$ y los ponderadores de la mezcla $\pi_k$ satisfacen
+$\sum_i \pi_i = 1$
+</div>
+
+Ahora, si vemos la mezcla Gaussiana desde la representación generativa, o 
+formulación en variable latente, tenemos el modelo gráfico $\Delta$ -> $X$
+donde $\Delta$ es una indicadora de clase. En el caso del modelo de dos clases
+tenemos $\delta \in \{0,1\}$ y sea $P(\delta=1)=\pi$, escribimos la conjunta
+$$p(\delta, x)=\pi^{\delta}(1-\pi)^{1-\delta}[\delta\phi_{\theta_1}(x)+(1-\delta)\phi_{\theta_2}(x)]$$
+
+y podemos verificar que la distribución marginal es una mezcla gaussiana:
+$$p(x)\sum_{\delta}p(x|\delta)p(\delta)$$
+$$=\phi_{\theta_1}(x) \pi + \phi_{\theta_2}(x)(1-\pi)$$
+
+Ahora, si conocieramos la clase a la que pertenece cada observación ($\delta^i$)
+podríamos escribir la log-verosimilitud completa (sin censura) como
+$$\sum_{i=1}^N \log(\delta^i \phi_{\theta_1} (x^i)+ (1-\delta^i)\phi_{\theta_2}(x^i)) + \delta^i \log\pi + (1-\delta^i)\log(1-\pi).$$
+
+Aquí, es fácil ver que la verosimilitud se separa en dos partes, una
+para $\delta^i=1$ y otra para $\delta^i=0$, y los estimadores de máxima
+verosimilitud son entonces:
+
+$$\hat{\mu}_1=\frac{\sum_i\delta^i x^i}{\sum_i (\delta^i)}$$
+$$\hat{\mu}_2=\frac{\sum_i(1-\delta^i) x^i}{\sum_i (1-\delta^i)}$$
+
+$$\hat{\sigma}_1^2=\frac{\sum_i\delta^i (x^i-\mu_1)^2}{\sum_i (\delta^i)}$$
+$$\hat{\sigma}_2^2=\frac{\sum_i(1-\delta^i) (x^i-\mu_2)^2}{\sum_i (1-\delta^i)},$$
+
+y $\hat{\pi}$ es la proporción de casos tipo 1 en los datos.
+Este problema es entonces trivial de resolver. 
+
+En el caso de variables latentes $\delta^i$ están censuradas y tenemos que 
+marginalizar con respecto a $\delta^i$, resultando en:
+
+$$\sum_{i=1}^N \log(\pi \phi_{\theta_1} (x^i)+ (1-\pi)\phi_{\theta_2}(x^i)).$$
+
+donde $\pi$ es la probabilidad de que la observación venga de la primera
+densidad.  Este problema es más difícil pues tenemos tanto $\pi$ como $\theta_1$ 
+y $\theta_2$ dentro del logaritmo. Podemos resolver numéricamente como sigue:
+
+```{r}
+crearLogLike <- function(x){
+  logLike <- function(theta){
+    pi <- exp(theta[1]) / (1 + exp(theta[1]))
+    mu_1 <- theta[2]
+    mu_2 <- theta[3]
+    sigma_1 <- exp(theta[4])
+    sigma_2 <- exp(theta[5])
+    sum(log(pi*dnorm(x, mu_1, sd=sigma_1)+(1-pi)*dnorm(x,mu_2,sd=sigma_2)))
+  }
+  logLike
+}
+func_1 <- crearLogLike(c(x_1,x_2))
+system.time(salida <- optim(c(0.5,0,0,1,1), func_1, control=list(fnscale=-1)))
+salida$convergence
+exp(salida$par[1]) / (1 + exp(salida$par[1]))
+salida$par[2:3]
+exp(salida$par[4:5])
+```
+
+Y vemos que hemos podido recuperar los parámetros originales.
+
+Ahora implementamos EM para resolver este problema. Empezamos con la
+log-verosimilitud para datos completos (que reescribimos de manera más 
+conveniente):
+$$\sum_{i=1}^N \delta^i\log\phi_{\theta_1} (x^i)+ (1-\delta^i)\log\phi_{\theta_2}(x^i) + \delta^i \log\pi + (1-\delta^i)\log(1-\pi).$$
+
+Tomamos valores iniciales para los parámetros 
+$\hat{\mu}_1,\hat{\mu}_2,\hat{\sigma}_1^2, \hat{\sigma}_2^2, \hat{\pi}$ 
+y comenzamos con el paso **Esperanza** promediando sobre las variables 
+aleatorias, que en este caso son las $\delta^i$. Calculamos entonces
+$$\hat{\gamma}^i=E_{\hat{\theta}}(\delta^i|x^i)=P(\delta^i=1|x^i),$$
+y usamos bayes para expresar en términos de los parámetros:
+$$\hat{\gamma}^i=  \frac{\hat{\pi}\phi_{\hat{\theta_1}}}
+{\hat{\pi}\phi_{\hat{\theta_1}}(x_i)+(1-\hat{\pi})\phi_{\hat{\theta_2}}(x_i)}$$
+
+$\hat{\gamma}^i$ se conocen como la _responsabilidad_ del modelo 1 para explicar
+la i-ésima observación. 
+
+Utilizando estas _asignaciones_ de los faltantes pasamos al paso 
+__Maximización__, donde la función objetivo es:
+$$\sum_{i=1}^N \hat{\gamma}^i\log \phi_{\theta_1} (x^i)+ (1-\hat{\gamma}^i)\log\phi_{\theta_2}(x^i) + \hat{\gamma}^i \log\pi + (1-\hat{\gamma}^i)\log(1-\pi).$$
+
+La actualización de $\pi$ es fácil:
+
+$$\hat{\pi}=\frac{1}{N}\sum_i{\gamma^i}.$$
+
+y se puede ver sin mucha dificultad que 
+
+$$\hat{\mu}_1=\frac{\sum_i\hat{\gamma}^i x^i}{\sum_i \hat{\gamma}^i}$$
+$$\hat{\mu}_2=\frac{\sum_i(1-\hat{\gamma}^i) x^i}{\sum_i (1-\hat{\gamma}^i})$$
+
+$$\hat{\sigma}_1^2=\frac{\sum_i\hat{\gamma}^i (x^i-\mu_1)^2}{\sum_i \hat{\gamma}^i}$$
+$$\hat{\sigma}_2^2=\frac{\sum_i(1-\hat{\gamma}^i) (x^i-\mu_2)^2}{\sum_i (1-\hat{\gamma}^i)},$$
+
+![](img/manicule2.jpg) Implementa EM para el ejemplo de 
+mezcla de normales.
+
+
+### Mezclas gaussianas más general
+Un caso más general es suponer que hay $K$ posibles clases y las distribuciones
+de la mezcla son normal multivariadas. De tal manera que 
+$$P(\delta_k^i=1)=\pi_k, \sum_{k=1}^K \pi_k =1$$
+
+Entonces, la distribución de los datos observados es la mezcla Gaussiana:
+
+$$p(x)=\sum_{k=1}^K \pi_k p_{\theta_k}(x)$$
+
+donde $p_{\theta_k}$ es normal multivariada con parámetros $\theta_k=\{\mu_k, \Sigma_k\}$,
+
+$$p_{\theta_k}(x)=\frac{1}{(2\pi|\Sigma_k|)^{1/2}}exp\big\{\frac{1}{2}(x-\mu_k)^T \Sigma_k^{-1}(x-\mu_k)\big\}$$
+
+La estimación en el caso multivariado con $K$ clases se realiza con el algoritmo 
+EM de manera análoga al caso de dos clases y normal univariada; sin embargo, 
+es posible restringir el tipo de mezcla a clases de distribuciones Gaussianas
+determinadas por la matriz de covarianzas.
+
+Consideremos la descomposición de espectral de la $k$-ésima matriz de 
+covarianzas:
+
+$$\Sigma_k=\lambda_k D_k A_k D_k^T$$
+
+* $A_k$ es una matriz diagonal con $det(A_k)=1$ y entradas diagonales 
+proporcionales a los eigenvalores de $\Sigma_k$. $A_k$ controla la **forma** 
+(_shape_) del $k$-ésimo cluster.
+
+* $\lambda_k$ es una constante igual al $det(\Sigma_k)$ que controla el 
+**volumen** del $k$-ésimo cluster.
+
+* $D_k$ es la matriz ortonormal de eigenvectores y controla la __orientación__
+del $k$-ésimo cluster.
+
+Utilizando la descomposición de arriba hay modelos de mezclas Gaussianas que 
+se restringen a cluster con propiedades particulares, por ejemplo:
+
+* $\Sigma_k=\lambda I$: clusters esféricos de igual volumen.
+
+* $\Sigma_k=\lambda_k I$: clusters esféricos de distinto volumen.
+
+* $\Sigma_k=\lambda_k A$: clusters elipsoidales de distinto volumen pero misma
+forma , orientaciones alineadas con el eje.
+
+...
+
+* $\Sigma_k=\lambda_k D_k A_k D_k^T$ modelo sin restricciones.
+
+Ahora veremos como ajustar estos modelos. En R hay varios paquetes para ajustar 
+mezclas gaussianas, dos de ellos son [mclust](http://www.stat.washington.edu/research/reports/2012/tr597.pdf) 
+y [mixtools](http://www.jstatsoft.org/v32/i06/paper). También está [flexmix](http://cran.r-project.org/web/packages/flexmix/vignettes/flexmix-intro.pdf)
+
+Veamos un ejemplo usando mclust, en este paquete los modelos disponibles son
+
+```
+?mclustModelNames
+Mezclas Univariadas  	
+"E"	=	equal variance (one-dimensional)  
+"V"	=	variable variance (one-dimensional)  
+Mezclas multivariadas
+"EII"	=	spherical, equal volume  
+"VII"	=	spherical, unequal volume  
+"EEI"	=	diagonal, equal volume and shape  
+"VEI"	=	diagonal, varying volume, equal shape  
+"EVI"	=	diagonal, equal volume, varying shape  
+"VVI"	=	diagonal, varying volume and shape  
+"EEE"	=	ellipsoidal, equal volume, shape, and orientation  
+"EEV"	=	ellipsoidal, equal volume and equal shape  
+"VEV"	=	ellipsoidal, equal shape  
+"VVV"	=	ellipsoidal, varying volume, shape, and orientation
+```
+
+La nomenclatura es: E=equal, V=varying, I=identity, y las letras están ordenadas
+1ra=volumen, 2a=forma, 3ra=orientación.
+
+En todos los modelos hay $K-1$ parámetros para las probabilidades iniciales 
+$\pi_k$ mas $Kp$ parámetros para las medias mas los parámetros de la matriz
+de covarianzas:
+
+<img src="param_GMM.png" style="width: 400px;"/>
+
+Los modelos con menos restricciones tienen más parámetros por estimar y por 
+tanto necesitan de más datos para alcanzar la misma precisión.
+
+Usaremos los datos [wine](https://archive.ics.uci.edu/ml/machine-learning-databases/wine).
+
+```{r, fig.height=7, warning=FALSE, message=FALSE}
+library(mclust)
+wine <- read.csv("data/wine.csv", stringsAsFactors=FALSE)[, -1]
+w_mclust <- Mclust(wine)
+summary(w_mclust)
+```
+
+Podemos ver más detalles:
+
+```{r}
+summary(w_mclust, parameters = TRUE)
+```
+
+Y podemos ver una tabla con el BIC para cada modelo, es importante tomar en 
+cuenta que en mclust el BIC se define como:
+
+$$BIC = 2\log l(x;\hat{\theta}) - d\log n$$
+
+$d$ es el número de parámetros y $n$ el número de observaciones. Por tanto, 
+buscamos maximizar el BIC.
+
+```{r, fig.height=7, warning=FALSE, message=FALSE}
+round(w_mclust$BIC)
+w_mclust
+```
+
+En la tabla de arriba, los renglones indican el número de conglomerados.
+
+El paquete incluye algunas gráficas auxiliares.
+
+```{r, fig.height=5, fig.width = 5, warning=FALSE, message=FALSE}
+plot(w_mclust, what = "BIC")
+# hay 3 plots más:
+# plot(w_mclust)
+```
+
+Y podemos hacer otras gráficas, por ejemplo podemos usar [tourr](http://www.jstatsoft.org/v40/i02/paper) para explorar los datos multivariados.
+
+```{r, fig.width=5, fig.height=4.6, message=FALSE,warning=FALSE, eval=FALSE}
+library(tourr)
+
+w_mclust <- Mclust(wine, G = 3, modelNames = "VVI")
+summary(w_mclust)
+
+cl_p <- data.frame(cluster = w_mclust$classification, wine)
+
+aps <- 2
+fps <- 20
+
+mat <- rescale(wine)
+tour <- new_tour(mat, grand_tour(), NULL)
+start <- tour(0)
+proj_data <- reactive({
+  invalidateLater(1000 / fps, NULL);
+  step <- tour(aps / fps)
+  data.frame(center(mat %*% step$proj), 
+             clusters = factor(w_mclust$classification))
+})
+proj_data %>% ggvis(~X1, ~X2, fill = ~clusters) %>%
+  layer_points() %>%
+  scale_numeric("x", domain = c(-1, 1)) %>%
+  scale_numeric("y", domain = c(-1, 1)) %>%
+  set_options(duration = 0)
+```
+
+### Observaciones
+
+* Las mezclas Gaussianas son sensibles a datos atípicos (outliers).
+
+* Puede haber inestabilidad si los componentes Gaussianos no están separados
+apropiadamente o si los datos son chicos.
+
+* A comparación de otros métodos de _clustering_ el tener un modelo 
+probabilístico explícito hace posible verificar supuestos y tener medidas de
+ajuste. Por ejemplo, podemos usar BIC para elegir el número de _clusters_.
+
+* _k-medias_ es un caso particular de mezclas gaussianas donde en cada paso
+se realizan asignaciones _duras_. 
+
+* Desventajas: los resultados dependen de la inicialización del algoritmo EM, 
+puede ser demasiado flexible o inestable.
+
+* Las mezclas gaussianas se pueden extender a mezclas de modelos de regresión
+que pueden ser modelos lineales estándar o modelos lineales generalizados.
+Esto esta implementado en el paquete _flexmix_ que utiliza el algoritmo EM.
+
+
+### Aplicación: Background Subtraction
+
+_Background Subtraction_ es una técnica de procesamiento de imágenes donde 
+se buscan extraer los objetos en el frente de la imagen. Por ejemplo, puede ser 
+de interés  detectar autos, animales o personas de una imagen. Ejemplos:
+
+* Monitoreo de tráfico (contar vehiculos, detectar y seguir vehículos).  
+
+* Reconocimiento de actividades humanas (correr, caminar, brincar).
+
+* Seguimiento de objetos (seguir la bola en el tenis).
+
+![](img/coches.png)
+
+Los modelos de mezclas gaussianas son populares para esta tarea: la idea básica
+es suponer que la intensidad de cada pixel en una imagen se puede modelar usando 
+un modelo de mezclas Gaussianas. Después se determina 
+que intensidades corresponden con mayor probabilidad al fondo seleccionando
+como fondo las gaussianas con menos varianza y mayor evidencia ($\pi_j$).
+
+En [OpencCV](http://docs.opencv.org/trunk/doc/py_tutorials/py_video/py_bg_subtraction/py_bg_subtraction.html) hay tres algoritmos implementados para sustraer fondo, estos usan variantes de 
+mezclas gaussianas:
+
+1. [An Improved Adaptive Background Mixture Model for Real- time Tracking with Shadow Detection](http://www.ee.surrey.ac.uk/CVSSP/Publications/papers/KaewTraKulPong-AVBS01.pdf)
+
+2. [Efficient Adaptive Density Estimation per Image Pixel for the Task of Background Subtraction](http://www.zoranz.net/Publications/zivkovicPRL2006.pdf)
+
+3. [Improved adaptive Gausian mixture model for background subtraction](http://www.zoranz.net/Publications/zivkovic2004ICPR.pdf)
+

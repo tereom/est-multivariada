@@ -1,0 +1,463 @@
+# Modelos gaussianos
+
+Una extensión de redes no dirigidas para distribuciones continuas son los 
+modelos gaussianos. Los modelos gaussianos tienen un supuesto de normalidad 
+multivariada que es difícil de verificar. Generalmente, se considera que la 
+pregunta interesante es si los datos son suficientemente cercanos a normalidad 
+para aplicar un procedimiento dado. Existen diagnósticos, pero aquí consideramos
+que estos modelos gaussianos, típicamente, pueden utilizarse más como 
+procedimientos exploratorios
+
+## Distribución normal multivariada
+
+Recordamos primero la distribución normal bivariada. Sean $(X_1,X_2)$ variables
+aleatorias continuas. Decimos que estas variables tienen distribución
+normal bivariada con media $(\mu_1,\mu_2)$ y matriz de varianza y covarianza
+
+$$
+\Sigma=\left(   
+\begin{array}{cc}
+\sigma_1^2 & \rho\sigma_1\sigma_2\\
+\rho\sigma_1\sigma_2 & \sigma_2^2
+\end{array}
+\right) 
+$$
+
+La función de densidad de $(X_1,X_2)$ está dada por
+
+$$f(x_1,x_2)\propto \exp \left\{-  \frac{1}{2}(x_1-\mu_1, x_2-\mu_2)\Sigma^{-1} (x_1-\mu_1, x_2-\mu_2)^t        \right\}.$$
+
+Recordamos las siguientes propiedades:
+
+* La marginal de $X_i$ es normal con media $\mu_i$ y varianza $\sigma_1^2$.
+* La condicional de $X_2$ dado $X_1=x_1$ es normal con media dada por la recta de regresión:
+$$\mu_2+\rho\frac{\sigma_2}{\sigma_1}(x_1-\mu_1)$$ 
+y varianza $(1-\rho^2)\sigma_2^2$.
+* Si $\rho=0$, entonces $X_1$ y $X_2$ son independentes. 
+* La dependencia de $X_2$ de $X_1$ sólo se da a través de la media condicional (la varianza de
+la condicional es fija).
+
+Ahora consideramos $(X_1,\ldots, X_k)$ normal multivariada con media
+$\mu$ y matriz de varianza y covarianza $\Sigma$. 
+$$f(x_1,\ldots,x_k)\propto \exp \left\{  -\frac{1}{2}(x-\mu)^t\Sigma^{-1} (x-\mu)    \right\}.$$
+Si escribimos $D=\Sigma^{-1}$ (a $D$ se le llama a veces la 
+**matriz de precisión**, que es simétrica positiva definida), entonces podemos
+también escribir la densidad conjunta como (agrupando términos y redefiniendo la
+constante de proporcionalidad):
+
+$$f(x_1,\ldots,x_k)\propto \exp \left\{  -\frac{1}{2}\sum_{i,j}D_{ij}x_ix_j -\sum_{i} \gamma_i x_i \right\}.$$
+
+Notamos ahora que esta conjunta se expresa naturalmente como un producto de 
+factores donde cada factor depende de dos variables, notamos también que los
+factores que aparecen dependen de qué coeficientes son iguales a cero de la 
+matriz de precisión $D$. Según la teoría que hemos visto, si el coeficiente de 
+un factor es cero esto implica que las dos variables correspondientes a dicho
+factor deben ser condicionalmente independientes dada el resto.
+
+
+#### Ejemplo {-}
+
+Estandarizamos las variables y examinamos las correlaciones:
+
+```{r}
+library(bnlearn)
+library(gRim)
+
+data(marks)
+head(marks)
+marks_s <- data.frame(scale(marks, center=TRUE, scale=TRUE))
+round(var(marks_s), 2)
+```
+
+Cuya matriz de precisión es
+
+```{r}
+D <- solve(var(marks_s))
+round(D, 2)
+```
+
+Nótese que existen varios coeficientes cercanos a cero.
+
+## Matriz de precisión
+
+Los elementos de la diagonal de $D=\Sigma^{-1}$ pueden interpretarse de la 
+siguiente manera:
+
+* Los elementos de la diagonal están relacionados con la $R^2$ de la regresión
+de la variable correspondiente con respecto a todas las demás:
+$$D_{ii}= 1/(1-R_i^2)$$
+
+```{r}
+fit_alg <- lm(ALG ~ MECH + VECT + ANL + STAT, data = marks_s)
+# summary(fit_alg)
+R2 <- summary(fit_alg)$r.squared
+D_alg <- 1 / (1 - R2)
+fit_anl <- lm(ANL ~ MECH + VECT + ALG + STAT, data = marks_s)
+R2 <- summary(fit_anl)$r.squared
+D_anl <- 1 / (1 - R2)
+c(D_alg, D_anl)
+```
+
+
+* Los elementos fuera de la diagonal están relacionados con la correlación
+parcial entre dos variables. La correlación parcial $\rho_{ij|resto}$ 
+entre $X_i$ y $X_j$ es la correlación entre los residuales de la regresión de
+$X_i$ contra el resto de las variables y los residuales de $X_j$ contra el 
+resto de las variables. Se puede interpretar como la correlación que existe
+entre $X_i$ y $X_j$ cuando mantenemos el resto de las variables fijas. Cuando
+este coeficiente es mucho más chico que la correlación usual entre $X_i$ y 
+$X_j$ quiere decir que una buena parte de la correlación de estas variables
+puede explicarse debido a variación entre el resto de las variables. 
+Específicamente,
+$$\rho_{ij|resto}-\frac{D_{ij}}{\sqrt{D_{ii}D_{jj}}}.$$
+
+```{r}
+fit_alg_2 <- lm(ALG ~ MECH + VECT + STAT, data = marks_s)
+fit_anl_2 <- lm(ANL ~ MECH + VECT + STAT, data = marks_s)
+cor(residuals(fit_alg_2), residuals(fit_anl_2))
+
+- D[3, 4] / sqrt(D[3, 3] * D[4, 4])
+```
+
+Notemos que no es lo mismo que la correlación usual entre STAT y MECH.
+
+```{r}
+cor(marks_s)[3, 4]
+```
+
+Podemos examinar todas las correlaciones parciales haciendo:
+
+```{r}
+D <- solve(cor(marks_s))
+parciales_D <- -(t(D * (1/sqrt(diag(D)))) * (1 / sqrt(diag(D))))
+round(parciales_D, 2)
+```
+
+<div class="clicker">
+![](img/manicule2.jpg) En cada una de las imágenes de abajo
+indica si la estructura de la gráfica del lado derecho corresponde a la matriz
+de correlación parcial (cuadro indica valor distinto a cero y vacío indica 
+cero).  
+<img src="imagenes/grafs_mats.png" />
+a. Arriba izquierda: Verdadero  
+b. Arriba derecha: Verdadero  
+c. Abajo izquierda: Verdadero  
+d. Abajo derecha: Verdadero  
+</div>
+
+### Independencia condicional para la normal multivariada
+
+De la discusión anterior, vemos que cuando $(X_1,\ldots, X_k)$ es
+normal multivariada, entonces $X_i$ es independiente de $X_j$ dado el resto
+de las variables si y sólo si la correlación parcial es cero, o de otra forma,
+cuando $D_{ij}=0$.
+
+Podemos ahora apelar a nuestros resultados anteriores (propiedades de Markov
+por pares, global y distribución de Gibbs) para demostrar el siguiente
+teorema (aunque también se puede resolver mediante cálculo):
+
+<div class="caja">
+Si $X=(X_a,X_b, X_c)$ es normal multivariada, donde $X_a,X_b,X_c$ son
+bloques de variables.  Los vectores $X_a$ y $X_b$ son condicionalmente 
+independientes dado $X_c$ si y sólo si el bloque $D_{ab}$ de la precisión o
+varianza inversa $D=\Sigma^{-1}$ es igual a cero.
+</div>
+
+```{r}
+round(cov(marks))
+```
+
+Si estandarizamos las variables para que la variabilidad sea comparable,
+obtenemos la matriz
+
+```{r}
+cor(marks)
+```
+
+Cuya inversa es
+
+```{r}
+inv_1 <- round(solve(cor(marks)), 2)
+inv_1
+```
+
+Donde vemos los coeficientes de esta inversa para los pares ANL-MECH, ANL-VECT,
+VEC-STAT, MECH-STAT son cercanos a cero. Esto implica que son variables
+cercanas a la independencia dado el resto de las variables. Así que
+un modelo apropiado para estos datos tiene todas las aristas, excepto
+la lista que mencionó arriba. Terminamos entonces con la gráfica
+
+```{r}
+library(Rgraphviz)
+data(marks)
+ug_1 <- ug(~ ANL:STAT + ALG:STAT + ALG:ANL + MECH:ALG + VECT:ALG + VECT:MECH)
+plot(ug_1)
+```
+
+Podemos graficar mostrando las correlaciones parciales:
+
+```{r}
+nombres <- sapply(edgeList(ug_1), function(x){
+  nombre <-  paste0('', paste(c(x[1], x[2]), collapse = "~"), '')
+  nombre
+})
+peso <- sapply(edgeList(ug_1), function(x){
+  peso <- as.character(round(parciales_D[x[1], x[2]], 2))
+})
+etiquetas <- peso
+names(etiquetas) <- nombres
+Rgraphviz::plot(ug_1, edgeAttrs = list(label = etiquetas))
+```
+
+### Estimación de máxima verosimilitud con estructura conocida
+
+<div class="caja">
+Un modelo no dirigido gaussiano especifica una distribución normal bivariada 
+$N(\mu, \Sigma)$ tal que  
+* Si no hay una arista entre $X_i$ y $X_j$, entonces $D_{ij}=D_{ji}=0$
+donde $D=\Sigma^{-1}$.
+</div>
+
+De esta forma, vemos que cuando tenemos una estructura no dirigida dada, 
+nuestro trabajo es estimar la matriz de covarianza (o la precisión) con
+restricciones de ceros dadas por las independencias condicionales.
+
+Podemos entonces maximizar la verosimilitud con las restricciones sobre la
+inversa de la matriz de varianza y covarianza. En general no es problema 
+trivial.
+
+## Aprendizaje de estructura
+
+Igual que en modelos log-lineales para datos categóricos, podemos ajustar
+modelos hacia atrás y hacia adelante (agregando/eliminando aristas) usando el BIC/AIC como criterio de selección, con distintas restricciones sobre la matriz
+de precisión. 
+
+#### Ejemplo {-}
+
+En este ejemplo consideramos las estaturas de los dos padres y de dos de sus
+hijas seleccionados al azar (entre las familias que tienen al menos dos hijas).
+
+```{r, echo=FALSE, eval=FALSE}
+library(tidyr)
+library(dplyr)
+library(HistData)
+
+data(GaltonFamilies)
+dat <- GaltonFamilies
+set.seed(228)
+dat <- GaltonFamilies %>%
+  filter(gender == "female") %>%
+  group_by(family) %>%
+  mutate(id = 1, n_female = n()) %>%
+  filter(n_female > 1) %>%
+  mutate(id = as.integer(cumsum(id)),
+    id = sample(id)) %>%
+  top_n(2, id) %>%
+  mutate(id = 1:2)
+
+glimpse(dat)
+
+dat_w <- dat %>%
+  select(family, father, mother, id, childHeight) %>%
+  spread(id, childHeight) %>%
+  select(-family)
+
+names(dat_w)[3:4] <- c('h1','h2')
+
+sigma <- var(dat_w)
+sigma
+solve(sigma)
+mod_1 <- cmod(~.^1, data = dat_w)
+dev.off()
+plot(mod_hijas <- forward(mod_1, type='unrestricted'))
+```
+
+```{r}
+library(plyr)
+library(gRim)
+library(HistData)
+data(GaltonFamilies)
+dat <- GaltonFamilies
+dat.2 <- ddply(dat, c('family'), function(df){
+  df$id_child <- sample(1:nrow(df), nrow(df))
+  df
+})
+dat.female <- subset(dat.2,  gender=='female')
+dat.female <- ddply(dat.female, c('family'), transform,
+
+  num.female=length(childHeight))
+
+dat.female.2 <- subset(dat.female, num.female>1)
+set.seed(28)
+dat.3 <- ddply(dat.female.2, c('family'), function(df){
+  df$id_child <- sample(1:nrow(df), nrow(df))
+  subset(df, id_child<3)
+})
+library(reshape2)
+dat.4 <- dcast(dat.3, family+father+mother~ id_child, value.var='childHeight')
+names(dat.4)[c(4,5)] <- c('h1','h2')
+sigma <- var(dat.4[, c('father','mother', 'h1','h2')])
+sigma
+solve((sigma))
+mod.1 <- cmod(~.^1, data=dat.4[,c('father','mother', 'h1','h2')])
+plot(mod_hijas <- forward(mod.1, type = 'unrestricted'))
+```
+
+Podemos examinar la matriz de precisión ajustada:
+
+```{r}
+D <- mod_hijas$fitinfo$K
+D
+```
+
+y para checar el ajuste comparamos la matriz de covarianzas empírica
+con la ajustada:
+
+```{r}
+round(cor(dat.4[, -1]), 2)
+round(cov2cor(solve(D)), 2)
+```
+
+Podemos comparar con
+
+```{r}
+mod.hijas.2 <- update(mod_hijas, list(dedge = ~mother:father))
+plot(mod.hijas.2)
+mod.hijas.2
+```
+
+
+```{r}
+mod.hijas.3 <- update(mod_hijas, list(dedge=~father:h1))
+plot(mod.hijas.3)
+mod.hijas.3
+```
+
+Nótese que la estimación de la matriz de varianza y covarianza está cercana
+a la empírica:
+
+```{r}
+D <- mod.hijas.2$fitinfo$K
+round(cor(dat.4[,-1]),2)
+round(cov2cor(solve(D)),2)
+```
+
+Mientras que eliminar father-h1 muestra un desajuste más considerable:
+
+```{r}
+D <- mod.hijas.3$fitinfo$K
+round(cor(dat.4[,-1]),2)
+round(cov2cor(solve(D)),2)
+```
+
+
+#### Ejemplo: datos bodyfat {-}
+
+Consideramos varias mediciones de dimensiones corporales de un conjunto de hombres, más una medición adicional de grasa corporal. En este ejemplo
+ilustramos 
+
+```{r}
+bodyfat <- read.table('data/bodyfat.txt', header=T)
+head(bodyfat)
+cov(bodyfat)
+precision <- round(100*solve(cor(bodyfat[,-1])))
+round(100*cov2pcor(cov(bodyfat)))
+
+bodyfat.1 <- bodyfat[,c('grasacorp','abdomen','peso','estatura','biceps','antebrazo',
+  'rodilla','muñeca')]
+summary(bodyfat.1)
+bodyfat.1 <- subset(bodyfat.1, estatura > 30 & peso <300)
+pairs(bodyfat.1)
+```
+
+Usamos el criterio bic ajustando modelos hacia adelante obtenemos:
+
+```{r, warning=FALSE}
+mod.1 <- cmod(~.^1, data=bodyfat.1)
+plot(mod.2 <- forward(mod.1, k=log(nrow(bodyfat.1)), type='unrestricted'))
+```
+
+Podemos checar el ajuste del modelo verificando que la matriz ajustada
+de correlaciones es similar a la observada:
+
+```{r}
+D <- mod.2$fitinfo$K
+round(cor(bodyfat.1[,]),2)
+round(cov2cor(solve(D)),2)
+```
+
+Y vemos que en en efecto estas dos matrices son muy similares.
+
+En muchos casos,  estos modelos presentan algunas correlaciones débiles
+que, aunque nos pueden interesar, pueden hacer difícil entender
+los rasgos importantes de nuestros datos. Vale la pena examinar ajustes penalizando por complejidad más fuertemente, y viendo qué tanto
+cambia la calidad del ajuste. Por ejemplo, si incrementamos la penalización
+(el bic da una penalización de 5):
+
+```{r, warning=FALSE}
+plot(mod.3 <- forward(mod.1, k=20, type='unrestricted'))
+D <- mod.2$fitinfo$K
+
+parciales.D <- -(t(D*(1/sqrt(diag(D))))*(1/sqrt(diag(D))))
+graf.1 <- ugList(mod.3$glist)
+nombres <- sapply(edgeList(graf.1), function(x){
+  nombre <-  paste0('',paste(c(x[1],x[2]), collapse="~"),'')
+  nombre
+})
+peso <- sapply(edgeList(graf.1), function(x){
+  peso <- as.character(round(parciales.D[x[1],x[2]],2))
+})
+etiquetas <- peso
+names(etiquetas) <- nombres
+plot(graf.1, edgeAttrs=list(label=etiquetas))
+```
+
+Este modelo establece, por ejemplo, que dado peso, biceps y estatura son
+independientes:
+
+
+```{r, message=FALSE, warning=FALSE, fig.width=7.5, fig.height=3.5}
+library(Hmisc)
+library(ggplot2)
+bodyfat.2 <- bodyfat.1
+bodyfat.2$grupo.peso <- cut2(bodyfat.2$peso, g=5)
+ggplot(bodyfat.2, aes(x=biceps, y=estatura)) + 
+  geom_point() +
+  facet_wrap(~grupo.peso, nrow = 1) + 
+  geom_smooth()
+
+```
+
+Sin condicionar observamos, 
+
+```{r, message=FALSE, warning=FALSE, fig.width=3.5, fig.height=3.5}
+ggplot(bodyfat.2, aes(x=biceps, y=estatura)) + 
+  geom_point() + geom_smooth()
+```
+
+
+Comparando las matrices de correlaciones.
+
+```{r}
+D <- mod.3$fitinfo$K
+round(cor(bodyfat.1[,]),2)
+round(cov2cor(solve(D)),2)
+```
+
+Donde vemos que este modelo más simple recupera razonablemente bien
+la estructura de covarianza. 
+
+![](img/manicule2.jpg) Utiliza los datos _carcass_ para
+crear un modelo gráfico Gaussiano. ¿Qué relaciones de independencia condicional
+lees en la gráfica?
+
+### Supuesto de normalidad multivariada
+
+Finalizamos recordando el inicio de la sección: el supuesto de normalidad 
+multivariada es en general difícil de 
+verificar. Generalmente, se considera que la pregunta interesante
+es si los datos son suficientemente cercanos a normalidad para 
+aplicar un procedimiento dado. Existen diagnósticos, pero aquí consideramos
+que estos modelos gaussianos, típicamente, pueden utilizarse más
+como procedimientos exploratorios.
+
