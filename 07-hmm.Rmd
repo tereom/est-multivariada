@@ -1,0 +1,994 @@
+# Modelos markovianos de estados ocultos
+
+Cuando los datos están ordenadas en sucesiones (temporales o espaciales, 
+por ejemplo), usualmente encontramos estructuras de dependencia dadas por la 
+proximidad. Por ejemplo, en series de tiempo observaciones de un tiempo dado 
+están correlacionadas con observaciones en tiempos cercanos. 
+
+Una estrategia para modelar este tipo de datos es considerar modelos que 
+explícitamente tratan con esta dependencia temporal entre las observaciones (por
+ejemplo, modelos ARMA). El enfoque que consideramos aquí es uno distinto que se 
+basa en variables latentes.
+
+En el caso de series de tiempo, estos modelos de variables latentes se llaman
+**modelos de espacio de estado**, cuyos dos ejemplos más populares son:
+
+1. *Modelos markovianos de estados escondidos* (Hidden Markov Models): cuando 
+las variables latentes son discretas. Las observadas pueden ser numéricas o 
+discretas.
+
+2. *Modelos dinámicos lineales*: cuando las variables latentes son gaussianas. 
+Las observadas generalmente son numéricas.
+
+**Ejemplo: serie de terremotos.** La siguiente serie cuenta el número de 
+temblores de magnitud 7 o más en el mundo, desde 1900 a 2006 ([Hidden Markov 
+Models for Time Series](http://www.crcpress.com/product/isbn/9781584885733), de Zucchini y MacDonald):
+
+```{r, fig.width=4.5, fig.height=3.5}
+terremotos <- data.frame(num = c(13,14,8,10,16,26,32,27,18,32,36,24,22,23,22,18,
+  25,21,21,14,8,11,14,23,18,17,19,20,22,19,13,26,13,14,22,24,21,22,26,21,23,24,
+  27,41,31,27,35,26,28,36,39,21,17,22,17,19,15,34,10,15,22,18,15,20,15,22,19,16,
+  30,27,29,23,20,16,21,21,25,16,18,15,18,14,10,15,8,15,6,11,8,7,18,16,13,12,13,
+  20,15,16,12,18,15,16,13,15,16,11,11), anio = 1900:2006)
+ggplot(terremotos, aes(anio, num)) + geom_line()
+```
+
+Es natural intentar modelar estos conteos con una distribución Poisson. 
+Sin embargo, un modelo Poisson para observaciones independientes no ajusta a los 
+datos:
+
+```{r}
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(nullabor)
+
+set.seed(12875498)
+lambda_1 <- mean(terremotos$num)
+# pruebas de hipótesis visuales
+terremotos_null <- lineup(null_dist('num', dist = 'poisson', 
+  params = list(lambda = lambda_1)), 
+  n = 20, terremotos)
+
+ggplot(terremotos_null, aes(x = num)) +
+  geom_histogram(binwidth = 3) +
+  facet_wrap(~.sample)
+```
+
+Vemos que los datos presentan _sobredispersión_ en relación a la distribución
+del modelo. Para lidiar con esta sobredispersión, podemos usar un modelo
+de clases latentes.
+
+Consideramos un modelo $C\to X$, donde $C$ es la clase latente y $X$ es la 
+observación. La observación la suponemos Poison con una media dependiendo de la 
+clase. Ajustamos por EM y seleccionamos un modelo:
+
+```{r}
+library(flexmix)
+model_1 <- FLXMRglm(family = "poisson")
+# usa algoritmo EM para ajustar (5 repeticiones con distintos arranques):
+# número de clases latentes: de 1 a 6.
+modelos_fit <- initFlexmix(num ~ 1, data = terremotos, k = 1:6, model = model_1, 
+  nrep = 5)
+modelos_fit
+```
+
+Así que podríamos escoger, por ejemplo, el modelo de tres clases:
+
+```{r}
+mod_1 <- getModel(modelos_fit, which='3')
+mod_1
+probs_clase <- mod_1@prior
+medias_pois <- mod_1@components
+probs_clase
+medias_pois
+```
+
+Para entender cómo quedó el ajuste, podemos graficar la serie original
+junto con la media poisson condicional de cada clase, por ejemplo:
+
+```{r, fig.width=4.5, fig.height=3.5}
+terremotos$clase_1 <- clusters(mod_1)
+
+terremotos$medias_est <- sapply(terremotos$clase_1, function(cl){
+  exp(mod_1@components[[cl]][[1]]@parameters$coef[1])
+})
+
+ggplot(terremotos, aes(anio, num)) + 
+  geom_line(alpha = 0.8) +
+  geom_line(aes(anio, medias_est), color = "red", alpha= 0.8)
+```
+
+Simulamos de estos datos y vemos que ya no hay sobredispersión (es decir,
+este modelo ajusta mejor que el de una sola clase):
+
+```{r}
+terremotos_null <- lineup(null_dist('num', dist = 'poisson', 
+  params = list(lambda = terremotos$medias_est)), 
+  n = 20, terremotos)
+```
+
+```{r}
+ggplot(terremotos_null, aes(x = num)) +
+  geom_histogram(binwidth = 3) +
+  facet_wrap(~.sample)
+```
+
+![](../../computo/imagenes/manicule2.jpg) Si una variable $Y$ es Poisson, su 
+media es igual a su varianza. Ahora supón que $Y$ es una mezcla discreta 
+Poisson: si  la clase latente la denotamos por $S$ y la observación por $Y$, 
+entonces $Y|S=s$ es Poisson con media $\lambda_s$, para $s=1\ldots,M$. Muestra 
+que en general la varianza de $Y$ es más grande que su media (está 
+sobredispersa). Explica en palabras de dónde viene esa sobredispersión.
+
+
+### Dependencia temporal
+
+Existe un aspecto adicional que no hemos considerado: dependencia de 
+observaciones contiguas en las serie. Podríamos gráficar para la serie de 
+terremotos las pares $(X_t, X_{t+1})$:
+
+```{r, fig.width=4.5, fig.height=3.5}
+ggplot(terremotos, aes(lag(num), num)) +
+  geom_point() +
+  geom_smooth()
+```
+
+Esta gráfica explica por qué si hacemos simulaciones de nuestro modelo ajustado
+(tomando en cuenta el orden temporal), estas simulaciones son claramente 
+diferentes que los datos observados:
+
+```{r}
+ggplot(terremotos_null, aes(anio, num)) +
+  geom_line(size=0.3) +
+  facet_wrap(~.sample)
+```
+
+Si nos interesa hacer predicciones, el modelo de mezcla no es un buen camino, 
+pues no utiliza adecuadamente la información más reciente para hacer los 
+pronósticos.
+
+Otra manera de verificar que las observaciones tienen mayor grado de correlación
+temporal que los simulados del modelo de mezcla es a través de los siguientes
+cálculos.
+
+```{r}
+terremotos_null %>%
+  group_by(.sample) %>%
+  mutate(num_lag = lag(num)) %>%
+  filter(!is.na(num_lag)) %>%
+  summarise(cor = cor(num, num_lag)) %>%
+  arrange(desc(cor))
+```
+
+Y notamos que justamente los datos con mayor correlación corresponden a los 
+datos observados (.sample = `decrypt("n20q ilOl TJ IH4TOTHJ 1")`). 
+
+Ahora evaluamos la tasa de error de predicción a un paso de este modelo
+usando _validación cruzada para datos temporales_. En este caso, la predicción
+es simplemente la media Poisson de la clase más popular:
+
+```{r, cache=TRUE}
+preds_1  <- sapply(50:106 ,function(i){
+  mod_1 <- flexmix(num~1, data = terremotos[1:i, , drop = FALSE], k = 3,                 
+    model = model_1)
+  mod_1
+  clase_1 <- which.max(table(mod_1@cluster))
+  mod_1@components[[clase_1]][[1]]@parameters[[1]]
+})
+```
+
+Error medio absoluto:
+
+```{r}
+mean(abs(exp(preds_1) - terremotos[51:107, "num"]))
+```
+
+#### Autocorrelación muestral {-}
+
+Una manera popular de diagnosticar observaciones temporalmente correlacionadas 
+es usando la función de autocorrelación muestral. Usualmente la correlación la
+calculamos para pares de observaciones $(X_i,Y_i)$. En el caso de la 
+autocorrelación, calculamos la correlación entre una serie y versiones rezagadas 
+de la misma variable, es decir, consideramos los pares $(X_i,X_{i-k})$ para 
+distintos valores de $k=1,2,\ldots$. La autcorrelación muestral se define:
+
+$$r_k=\frac{\sum_{t=k+1}^{T}(x_t-\overline{x})(x_{t-k}-\overline{x})}{\sum_{t=1}^T(x_t-\overline{x})},$$
+
+podemos graficar la serie $r_k$ para descubrir estructura en la serie que estamos analizando. En nuestro ejemplo: 
+
+```{r, fig.width=4.5, fig.height=4.5}
+acf(terremotos$num)
+```
+
+El primer valor ($k=1$) siempre es igual a 1. Observamos sin embargo 
+autocorrelacciones considerables de orden 1 a 5.
+
+¿Cómo se ve esta gráfica cuando tenemos observaciones independientes? Esperamos
+observar coeficientes de correlación relativamente chicos:
+
+```{r, fig.width=7, fig.height=4.5}
+set.seed(280572)
+par(mfrow=c(1,2))
+acf(rnorm(150))
+acf(rpois(150, 20))
+```
+
+### Modelando la dependencia temporal
+
+Si queremos capturar la estrucutra temporal de los datos, o hacer predicciones
+para datos futuros, es necesario modelar la estructura temporal explícita o 
+implícitamente. Por ejemplo,podríamos intentar construir el modelo:
+
+```{r, fig.height=2, fig.width = 4, echo=FALSE, message=FALSE,warning=FALSE}
+library(Rgraphviz)
+gr <- new("graphNEL", nodes = c("X1", "X2","X3","X4"), edgemode = "directed")
+gr.1 <- addEdge(from=c('X1','X2','X3'), to=c('X2','X3','X4'), gr)
+plot(gr.1,'dot', attrs = list(graph =
+   list(rankdir = "LR")))
+```
+
+O de manera más general, tomando en cuanto dependencias más largas:
+
+```{r, fig.height=2.5, fig.width = 4.5, echo=FALSE, message=FALSE,warning=FALSE}
+gr.2 <- addEdge(from=c('X1','X1','X2'), to=c('X3','X4','X4'), gr.1)
+plot(gr.2, 'dot', attrs = list(graph =
+   list(rankdir = "LR")))
+```
+
+Sin embargo, utilizaremos un enfoque de variables latentes. La idea es 
+introducir un estado latente, a partir del cual generamos las observaciones. Por
+ejemplo:
+
+```{r, fig.height=2.5, fig.width = 4.5, echo=FALSE, message=FALSE,warning=FALSE}
+gr <- new("graphNEL", nodes = c("X1", "S1","X2","S2","X3","S3","X4","S4"), edgemode = "directed")
+gr.1 <- addEdge(from=c('S1','S2','S3'), to=c('S2','S3','S4'), gr)
+gr.2 <- addEdge(from=c('S1','S2','S3','S4'), to=c('X1','X2','X3','X4'), gr.1)
+plot(gr.2,'dot', attrs = list(graph =
+   list(rankdir = "LR")))
+```
+
+En un modelo como este, pueden existir dependencias más largas entre las $X_t$, aún
+cuando la estructura es relativamente simple.
+
+¿cuáles son las independencias condicionales mostradas en la gráfica? ¿Las $X_i$ 
+son independientes entre ellas?}
+
+
+## Modelos markovianos de estados ocultos
+
+Comenzamos con un modelo simple, que consiste de dos variables, una observada y 
+una latente:
+
+* $X_t$ cantidad de lluvia en mm.
+* $S_t$ variable discreta con dos valores posibles: soleado o nublado.
+
+El modelo está definido en dos grandes partes
+
+1. Modelo de observaciones: 
+$$P(X_t|S_t).$$
+Este modelo está dado con dos densidades: una para la cantidad de lluvia cuando 
+$S_t=nublado$ y otra para $S_t=soleado$.
+
+2. Modelo de transición de estados:
+$$P(S_{t+1}|S_t).$$
+Estos modelos están dados por una matriz de transición, pues supondremos que
+estas probabildades no cambian con $t$ (supuesto de homogeneidad). Por ejemplo,
+podríamos tener:
+
+```{r}
+p_trans <- matrix(c(0.8, 0.2, 0.3, 0.7), byrow = T, ncol = 2)
+p_trans
+```
+
+Y el modelo completo se puede representar como la última gráfica de
+la sección anterior.
+
+En este ejmplo, el modelo de observaciones es $X_t$  normal con media 20 y 
+desviación estándar 5 cuando se trata de un día _soleado_, y $X_t$ es normal con 
+media 100 y desviación estándar 20 cuando se trata de un día _nublado_.
+
+```{r, message=FALSE}
+set.seed(2805)
+estadosLluvia <- function(n){
+  estado <- character(n)
+  estado[1] <- sample(c('soleado', 'nublado'), 1)
+  transicion <- matrix(c(0.8, 0.2, 0.2, 0.8), 2, byrow = T)
+  rownames(transicion) <- c('soleado', 'nublado')
+  colnames(transicion) <- c('soleado', 'nublado')
+  for(j in 2:n){
+    estado[j] <- sample(c('soleado', 'nublado'), 1, 
+      prob = transicion[estado[j - 1], ])
+  }
+  estado
+}
+estadosLluvia(10)
+
+prob_obs <- tibble(edo = c("soleado", "nublado"), medias = c(20, 100), 
+  desv = c(10, 50))
+
+obsPrecip <- function(long_serie){
+  tibble(dia = 1:long_serie, edo = estadosLluvia(long_serie)) %>%
+  left_join(prob_obs) %>%
+  mutate(
+    precipit = rnorm(1:long_serie, medias, desv), 
+    precipit = ifelse(precipit < 0, 0, precipit)
+    )
+}
+
+ej_1 <- obsPrecip(10)
+```
+
+Series simuladas de este modelo se ven como sigue:
+
+```{r, message=FALSE, message=FALSE, fig.width=7.5, fig.height = 4.5}
+sims_1 <- rdply(10, obsPrecip(50))
+
+ggplot(sims_1, aes(x = dia, ymax = precipit, ymin = 0, y = precipit, color = edo)) + 
+  geom_linerange(alpha = 0.6) + 
+  geom_point(size=0.8) + 
+  facet_wrap(~.n, nrow = 2)
+
+```
+
+Nótese que hay dependencia secuencial en estos datos. Si sólo tuviéramos los 
+datos observados, podríamos construir un modelo más complejo intentando entender 
+las correlaciones secuenciales:
+
+```{r, fig.height=4, fig.width=4.5}
+ej_1 <- obsPrecip(1000)
+acf(ej_1$precipit)
+```
+
+
+![](img/manicule2.jpg) Ajusta con EM un modelo a estos datos
+usando el paquete _depmixS4_. Prueba con distintos tamaños de muestra. Por ejemplo:
+
+```{r, message=FALSE, warning=FALSE}
+library(depmixS4)
+datos <- sims_1
+# ntimes: son 10 series de longitud 50 cada una:
+mod_hmm <- depmix(precipit~1, data=datos, nstates=2,
+                  family=gaussian(), ntimes=rep(50,10))
+fit_1 <- fit(mod_hmm,  emcontrol=em.control(maxit=200))
+summary(fit_1)
+```
+
+Observa que como tenemos varias series, podemos estimar las probabilidades 
+iniciales. Cuando tenemos una sola serie, típicamente suponemos que la serie 
+comienza en un estado, por ejemplo el primero.
+
+<div class="caja">
+Consideramos datos secuenciales $X_1,\ldots,X_T$. Un modelo markoviano de estado 
+oculto se factoriza como (es decir, cumple las relaciones de independencia 
+condicional indicadas en la gráfica):
+
+<img src="hmm2.png" style="width: 350px;"/>
+
+* Las variables $S_t$ (estado oculto) son latentes.
+
+* Las variables $X_t$ no son independientes, pero son condicionalmente 
+independientes dados los estados ocultos.
+
+* El modelo está dado por una factorización que solo incluye términos de la 
+forma $P(S_t|S_{t-1})$, $P(X_t|S_t)$ y $P(S_1)$.
+
+* En los modelos de transición de estados suponemos _homogeneidad_ de la cadena 
+de Markov subyacente, es decir,$$P(S_t=j|S_{t-1}=i)=p_{ij}$$no depende de $t$.
+
+* En los modelos de respuesta o de observación, las variables observadas $X_t$ 
+pueden ser discretas o continuas. Si $X_t$ son discretas, cada  $P(X_t|S_t)$ 
+está dada por una tabla, que también suponemos _homogénea_ (no depende de $t$). 
+Si $X_t$ son continuas, entonces estas probabilidades están dadas por densidades
+condicionales.
+</div>
+
+**Observación**: una generalización usual de homogeneidad es incluir covariables 
+en los modelos de respuesta o de observación, de forma que especificamos 
+$P(X_t|S_t,Z_t )$ con modelos de regresión, por ejemplo. El análisis es 
+condicional a los valores de $Z_t$ (no modelamos su dinámica, por ejemplo). 
+También las probabilidades de transición pueden depender de covariables.}
+
+**Ejemplo: serie de terremotos.** Ahora podemos regresar al ejemplo de los 
+terremotos. Ajustamos los modelos de estado oculto a la serie (de 1 a 4 estados):
+
+```{r}
+library(depmixS4)
+terremotos <- data.frame(num = c(13,14,8,10,16,26,32,27,18,32,36,24,22,23,22,18,
+  25,21,21,14,8,11,14,23,18,17,19,20,22,19,13,26,13,14,22,24,21,22,26,21,23,24,
+  27,41,31,27,35,26,28,36,39,21,17,22,17,19,15,34,10,15,22,18,15,20,15,22,19,16,
+  30,27,29,23,20,16,21,21,25,16,18,15,18,14,10,15,8,15,6,11,8,7,18,16,13,12,13,
+  20,15,16,12,18,15,16,13,15,16,11,11), anio = 1900:2006)
+head(terremotos)
+
+modelos_hmm <- lapply(1:4, function(i){
+  mod_hmm <- depmix(num~1, data = terremotos, nstates = i, family = poisson(), 
+    ntimes = 107)
+  fit_hmm <- fit(mod_hmm, emcontrol = em.control(maxit = 200))
+  fit_hmm
+  })
+sapply(modelos_hmm, BIC)
+sapply(modelos_hmm, AIC)
+```
+
+Podemos seleccionar el modelo con 3 estados.
+
+```{r}
+mod_1 <- modelos_hmm[[3]]
+summary(mod_1)
+```
+
+Simulaciones de este modelo dan los siguiente resultados, en donde es difícil 
+distinguir los datos observados:
+
+```{r}
+class(mod_1) <- 'depmix'
+set.seed(2805)
+sims_1 <- simulate(mod_1, nsim = 19)
+terremotos_null <- data.frame(num = sims_1@response[[1]][[1]]@y, 
+  anio = rep(terremotos$anio, 19)) %>%
+  rbind(terremotos)
+codigo <- sample(1:20)
+terremotos_null$tipo <- rep(codigo, each = 107)
+
+ggplot(terremotos_null, aes(x = anio, y = num)) +
+  geom_line(size=0.3) + 
+  facet_wrap(~tipo)
+
+# verdaderas están en: codigo[20]
+```
+
+Vemos que las autocorrelaciones de grado 1 son similares:
+
+```{r}
+terremotos_null %>%
+  group_by(tipo) %>%
+  mutate(num_lag = lag(num)) %>%
+  filter(!is.na(num_lag)) %>%
+  summarise(cor = cor(num, num_lag))
+```
+
+E incluso podemos comparar las gráficas de autocorrelación, que no muestran desajuste importante:
+
+```{r, fig.width=8, fig.height=5}
+set.seed(227342)
+# solo 10 gráficas
+sims_1 <- simulate(mod_1, nsim = 9)
+terremotos_null <- data.frame(num = sims_1@response[[1]][[1]]@y, 
+  anio = rep(terremotos$anio, 9)) %>%
+  rbind(terremotos)
+codigo <- sample(1:10)
+terremotos_null$tipo <- rep(codigo, each = 107)
+
+par(mfrow=c(2, 5))
+sims_x <- ddply(terremotos_null, 'tipo', function(df){
+  x <- df$num
+  acf(x, lag.max=12, main="")
+  x
+})
+```
+
+Podemos ver el desempeño de estos modelos en predicción:
+
+
+```{r, cache=TRUE, warning=FALSE}
+set.seed(72)
+preds_2  <- sapply(50:106 ,function(i){
+  dat.1 <- terremotos[1:i,,drop=FALSE]
+  mod.1 <- depmix(num ~ 1, data = dat.1, nstates = 3, family = poisson(),
+                  ntimes = i)                  
+  fit.mod.1 <- fit(mod.1, verbose = FALSE, emcontrol=em.control(maxit=600))
+  probs.1 <- fit.mod.1@posterior[i, 2:4]
+  #estado.i <- sample(1:3, 1, prob = probs.1)
+  estado.i <- fit.mod.1@posterior[i, 1]
+  estado.pred <- which.max(predict(fit.mod.1@transition[[estado.i]]))
+  fit.mod.1@response[[estado.pred]][[1]]@parameters[1]$coefficients
+})
+## error medio absoluto
+mean(abs(exp(preds_2) - terremotos[51:107,"num"]))
+```
+
+Finalmente, comparamos con la predicción de tomar el valor anterior:
+
+```{r}
+mean(abs(terremotos[51:107, "num"] - terremotos[50:106, "num"]))
+```
+
+**Ejemplo: prototipo reconocimiento de trazo de dígitos.** Los modelos de 
+estados escondidos se usan en varias partes de procesamiento de señales. En este ejemplo, veremos un enfoque para reconocer dígitos con base en los trazos que se 
+hacen para escribirlos, este es un enfoque distinto al usual en donde se trabaja
+con una matriz de pixeles. Utilizaremos los datos [pendigits](http://mlearn.ics.uci.edu/databases/pendigits/).
+
+```{r,fig.height=7,fig.width=6}
+load('data/pendigits/digitos_lista.RData')
+load('data/pendigits/digitos.RData')
+length(results.list)
+digito <- results.list[[1]]
+digito
+
+floor(nrow(digito)/9)
+par(mfrow=c(3,3))
+for(i in 1:9){
+  plot(digito[1:(8*(i-1)+2),])
+}
+```
+
+Nos interesa construir un modelo que describa la escritura de estos dígitos.
+Proponemos un modelo como sigue:
+
+* El espacio de estados ocultos tiene 16 estados distintos.
+
+* La matriz de transición entre estados es de _izquierda a derecha_. Es decir,
+la serie comienza en el estado 1, y solamente transiciona de 1 a 2, de 2 a 3 y 
+así sucesivamente. Puede permanecer un número arbitrario de tiempos en cada 
+estado.
+
+* Las observaciones son bivariadas: tenemos un ángulo de trazo (8 posibles 
+direcciones), y una velocidad de trazo (que supondremos gaussiano). Supondremos 
+estas dos variables son condicionalmente independientes dado el estado.
+
+
+La idea general es:
+
+1. Transformar los patrones de escritura a observaciones de ángulo y velocidad. 
+
+2. Ajustar un modelo distinto para cada uno de los dígitos.
+
+3. Cuando observamos un dígito nuevo, calculamos la verosimilitud de la 
+observación bajo los distintos modelos.
+
+4. Clasificamos al dígito con verosimilitud más alta.
+
+En estas notas veremos los primeros dos pasos.
+
+La ventaja de usar HMM en este contexto es, en primer lugar, que no es necesario
+normalizar los dígitos a una longitud fija (aunque esto puede ayudar en la 
+predicción), y mejor aún, que el modelo es flexible en cuanto a escalamientos 
+de distintas partes de la escritura de los dígitos, por ejemplo, dibujar más 
+lentamente unas partes, hacer un ocho con la parte de arriba más grande que la 
+de abajo, etc.
+
+Primero construimos funciones auxiliares:
+
+```{r, fig.width=3.5, fig.height = 3.5}
+# convertirSerie: recibe las coordenadas y devuelve el ángulo y la velocidad
+convertirSerie <- function(patron){
+  d_1 <- rbind(patron[-1, ], c(NA,NA)) - patron
+  d_2 <- d_1[-nrow(d_1), ]
+  angulo <- acos(d_2[, 1] / (apply(d_2, 1, function(x) sqrt(sum(x ^ 2))))) * 
+    sign(d_2[, 2])
+  velocidad <- apply(d_2, 1, function(x) sqrt(sum(x ^ 2)))
+  dat_out<- data.frame(angulo = angulo[], velocidad = velocidad[])
+  dat_out[!is.na(dat_out$angulo), ]
+}
+
+# trazar: recibe ángulo y velocidad y devuelve coordenadas
+trazar <- function(datos){
+  angulos <- datos[, 1]
+  velocidad <- datos[, 2]
+  longitud <- length(angulos) + 1
+  puntos <- data.frame(x = rep(NA, longitud), y = rep(NA, longitud))
+  puntos[1, ] <- c(0, 0)
+  for(i in 2:length(angulos)){
+    puntos[i,] <- puntos[i - 1, ] + velocidad[i - 1] * 
+      c(cos(angulos[i - 1]), sin(angulos[i - 1]))
+  }
+  puntos
+}
+
+con_ang <- convertirSerie(results.list[[6]])
+con_ang
+plot(trazar(con_ang))
+plot(results.list[[6]])
+```
+
+Comenzamos seleccionando los dígitos 8, convertimos los datos a una tabla, y 
+categorizamos los ángulos:
+
+```{r, message=FALSE, warning=FALSE}
+library(Hmisc)
+
+filtro <- sapply(digitos, function(x) x==8)
+resultados <- results.list[filtro]
+
+dat_8 <- ldply(1:700, function(i){
+  conv_1 <- convertirSerie(resultados[[i]])
+  data.frame(angulo = conv_1[,1], velocidad = conv_1[,2], serie=i, 
+    tiempo=1:nrow(conv_1))
+})
+head(dat_8)
+# Longitud de los dígitos
+longitudes <- ddply(dat_8, 'serie', summarise, long=max(tiempo))
+
+# Creamos 8 categorías usando cuantiles
+dat_8$angulo_cat <- factor(cut2(dat_8$angulo, g = 8, levels.mean = TRUE))
+levs <- as.numeric(levels(dat_8$angulo_cat))
+```
+
+Ahora construimos nuestro modelo. Una diferencia importante en relación a los
+ejempos anteriores es que aquí tenemos varias series de tiempo observadas
+(cuyas longitudes están en el argumento _ntimes_ abajo):
+
+```{r}
+mod <- depmix(list(angulo_cat ~ 1, velocidad ~ 1), data = dat_8, 
+    nstates = 16,
+    family =  list(multinomial("identity"), gaussian()),
+    ntimes = longitudes$long)
+```
+
+El modelo está incializado de la siguiente forma 
+
+```{r}
+summary(mod)
+```
+
+pero antes de ajustarlo, es necesario restringir los parámetros como describimos 
+arriba (para tener un modelo de izquierda a derecha)
+
+```{r}
+# usamos setpars para ver el orden de los parámetros y poder escribir las 
+# restricciones
+setpars(mod, value=1:npar(mod))
+pars <- c(unlist(getpars(mod)))
+# Restringimos a solo poder ir del estado uno al dos, dos al tres, ...
+# esto se hace modificando la inical de la matriz de transición
+pars[17:272] <- 0
+pars[sapply(1:16, function(i){0+17*i})] <- 1/2
+pars[sapply(1:15, function(i){1+17*i})] <- 1/2
+pars[255:256] <- 0.5
+pars[272] <- 1
+# restringimos estado inicial al 1
+pars[2:16] <- 0
+pars[1] <- 1
+mod <- setpars(mod, pars)
+summary(mod)
+```
+
+Ahora ajustamos usando EM:
+
+```{r, cache=TRUE}
+set.seed(280572)
+fm <- fit(mod,  emcontrol=em.control(maxit=100))
+summary(fm)
+```
+
+Y podemos simular algunas trayectorias:
+
+```{r, fig.width=3.5, fig.height = 3.5, warning=FALSE}
+set.seed(2805)
+fm_1 <- fm
+class(fm_1) <- 'depmix'
+sim_1 <- simulate(fm_1)
+resp_1 <- sim_1@response
+estados <- sim_1@states
+
+angulosSim <- lapply(resp_1[estados], function(x){ 
+  params <- x[[1]]@parameters$coefficients
+  c(sample(levs, 1, prob=params ), rnorm(1, x[[2]]@parameters[1][[1]], sd=x[[2]]@parameters[2]$sd))
+   # rnorm(1, params[[1]], sd=params$sd )}
+}
+)
+dat_x <- data.frame(Reduce(rbind, angulosSim))
+names(dat_x) <- c('angulo','velocidad')
+# estados
+head(dat_x, 6)
+plot(trazar(dat_x[1:78,]), type='l')
+plot(trazar(dat_x[79:(38+78),]), type='l')
+```
+
+La ruta de máxima probabilidad (estados) se puede ver en el objeto _posterior_.
+Esta secuencia indica los estados más probables en el sentido de máxima 
+probabilidad posterior (MAP).
+
+```{r, fig.width=4, fig.height = 4, warning=FALSE}
+plot(fm@posterior[1:60,1])
+respuesta <- fm@response[fm@posterior[1:60,1]]
+post <- ldply(respuesta, function(comp){
+  angulo.probs <- comp[[1]]@parameters$coefficients
+  velocidad <- comp[[2]]@parameters$coefficients
+  c(levs[which.max(angulo.probs)], velocidad)
+})
+names(post) <- c('angulo.cut','velocidad')
+plot(trazar(post))
+```
+
+En el caso de arriba, se inició en el estado 1 (por construcción), permaneció
+ahí por 5 tiempos, pasó al estado 2,...
+
+Veamos el caso del dígito 3:
+
+```{r, fig.width=4, fig.height = 4, warning=FALSE}
+load('data/pendigits/modelo_digitos_3.RData')
+
+filtro <- sapply(digitos, function(x) x==3)
+
+resultados <- results.list[filtro]
+
+dat.6 <- ldply(1:500, function(i){
+  conv.1 <- convertirSerie(resultados[[i]])
+  data.frame(angulo=conv.1[,1], velocidad=conv.1[,2], serie=i, tiempo=1:nrow(conv.1))
+})
+
+longitudes <- ddply(dat.6, 'serie', summarise, long=max(tiempo))
+
+dat.6$angulo.cut <- factor(cut2(dat.6$angulo, g=8, levels.mean=TRUE))
+levs <- as.numeric(levels(dat.6$angulo.cut))
+
+plot(fm@posterior[1:44,1])
+respuesta <- fm@response[fm@posterior[1:44,1]]
+post <- ldply(respuesta, function(comp){
+  angulo.probs <- comp[[1]]@parameters$coefficients
+  velocidad <- comp[[2]]@parameters$coefficients
+  c(levs[which.max(angulo.probs)], velocidad)
+})
+names(post) <- c('angulo.cut','velocidad')
+plot(trazar(post))
+```
+
+
+<div class="clicker">
+![](img/manicule2.jpg) 
+* En HMM, la variable $x_{n+1}$ es independiente de:
+
+1. $x_1,...,x_{n}$
+
+2. $x_1,...,x_{n-1}$
+
+3. $x_{n-1}$
+
+4. Ninguna de las anteriores.
+
+
+* Sea $A$ la matriz de transición en un HMM. Un modelo de mezclas para datos
+iid corresponde a un caso especial de HMM donde:
+
+1. $A_{jk}$ toman el mismo valor para toda $j$.
+
+2. $A_{jk}$ toman el mismo valor para toda $j$ y para toda $k$.
+
+3. $A_{jk}$ toman el mismo valor para toda $k$.
+
+4. Ninguna de las anteriores.
+</div>
+
+### Algoritmo EM para modelos markovianos de estados ocultos
+
+Ahora veremos cómo se construye el paso E y M del algoritmo esperanza-
+maximización para HMM.
+
+Similar al caso de varaibles latentes, comenzamos escribiendo la verosimilitud 
+con datos completos. La serie de datos observados la denotamos como
+$$X=X_1,\ldots, X_T$$
+y la de datos latentes
+$$S=S_1,\ldots, S_T.$$
+
+Supongamos que tenemos una observación $x=x_1,\ldots, x_T$ con
+ $s=s_1,\ldots, s_T$. Si suponemos que $P(S_1=s_1)=1$ la verosimilitud (usando 
+ nuestro
+ modelo HMM) es
+ 
+$$P(x,S=s)=P(x_1|S_1=s_1)P(S_2=s_2|S_1=s_1)P(x_2|S_2=s_2)\cdots
+P(S_{T}=s_T|S_{T-1}=s_{t-1})P(x_T|S_T=s_T).$$
+
+Si denotamos $p_{ij}=P(S_t=j|S_{t-1}=i)$ y $p_j=P(x_t|S_t=j)$. Tomando
+logaritmo y reacomodando:
+
+$$\log P(x,S=s) =\sum_{t=2}^t \log p_{s_{t-1}, s_{t}} +
+\sum_{t=1}^T \log p_{s_t}(x_t).
+$$
+
+Nos conviene reescribir esta ecuación de otra manera. Introducimos
+entonces las variables indicadoras $u_j(t)$, tales que
+$u_j(t)=1$ si y sólo si $s_t=j$, y $v_{ij}(t)$, tales que
+$v_{ij}(t)=1$ si y sólo si $s_{t-1}=i, s_{t}=j$. Entonces podemos reescribr
+
+$$\log P(x,S=s) = \sum_{i=1}^M\sum_{j=1}^M \left(   
+\sum_{t=2}^T v_{ij} (t)
+\right) \log p_{ij} +
+\sum_{i=1}^M \sum_{t=1}^T u_i(t)\log p_i(x_t).
+$$
+
+A partir de esta ecuación es fácil ver la forma del algoritmo.
+
+1. Paso **E**: Necesitamos calcular el valor esperado condicional (dados los 
+datos observados $X$) de la expresión de arriba. Basta entonces calcular
+$$\delta_j (t)=E(u_j(t)|X)=P(S_t=j|X)$$ y
+$$\gamma_{ij}(t) =E(v_{ij}(t)|X)=P(S_{t-1}=i, S_{t}=j|X).$$
+
+Una vez que calculamos estas cantidades (usando el algoritmo hacia 
+adelante-hacia atrás, o de Baum-Welch, como veremos más adelante), procedemos al 
+paso M.
+
+2. Paso **M**: Buscamos maximizar
+
+$$
+\sum_{i=1}^M\sum_{j=1}^M \left(   
+\sum_{t=2}^T \hat{\gamma}_{ij} (t)
+\right) \log p_{ij} +
+\sum_{i=1}^M \sum_{t=1}^T \hat{\delta}_i(t)\log p_i(x_t)
+$$
+
+
+* Notemos que la optimización de los parámetros de $p_i$ se puede separar de la
+correspondiente a $\hat{p}_{ij}$. Más aun, la optimización de $\hat{p}_{ij}$
+se puede separar para cada $i$.
+
+* Es fácil ver que
+$$\hat{p}_{ij}=\frac{\hat{\gamma}_{ij}}{\sum_l \hat{\gamma}_{il}}$$ donde
+$$\hat{\gamma}_{ij}=\sum_{t=2}^T \hat{\gamma}_{ij} (t),$$
+que son conteos ponderados por las probabilidades que resultan del paso E.
+
+* Para el segundo término, tenemos que usar la forma particular de las
+densidades condicionales $p_j(x)$. Si suponemos $p_i$ densidad Normal $\hat{\mu_i}$ y $\hat{\Sigma_i}$ resultan: 
+$$\hat{\mu_i}=\frac{\sum_{t=1}^T \hat{\delta_i}(t) x_t}{\sum_{t=1}^T \hat{\delta_i}(t)}$$
+$$\hat{\Sigma_i}=\frac{\sum_{t=1}^T \hat{\delta_i}(t) (x_t-\hat{\mu}_i)(x_t-\hat{\mu}_i)^T}{\sum_{t=1}^T \hat{\delta}(t)}$$
+es el mismo caso que en mezcla de normales. Como ejercicio, calcula para el
+modelo Poisson.
+
+
+## Algoritmo hacia adelante-hacia atrás (forward-backward)
+
+Utilizamos el algoritmo _forward-backward_ para calcular $\hat{\gamma}_{ij}$ y
+$\hat{\delta}_j$. Recordemos que
+
+$$
+\begin{aligned}
+\hat{\delta}_{j}&=P(S_{t}=j|x)=\frac{P(x, S_t=j)}{P(x)}\\
+\hat{\gamma}_{ij}&=P(S_{t-1}=i,S_t=j|x)=\frac{P(x,S_{t-1}=i,S_t=j)}{P(x)}
+\end{aligned}
+$$
+
+El cálculo de cada una de las probabilidades de arriba es computacionalmente
+intensivo, por ejemplo para calcular $P(x)$:
+
+$$P(x)=\sum_{\mathcal{S}} p_{s_1}(x_1)p_{s_1,s_2}p_{s_2}(x_2)\cdots
+p_{s_{T-1},s_T}p_{s_T}(x_T)$$
+
+donde $\mathcal{S}$ son las combinaciones de posibles estados ($M^T$ 
+posibilidades) por tanto esta aproximación no es factible. Es por esto que 
+surge la necesidad de un algoritmo más eficiente.
+
+El algoritmo hacia adelante-hacia atrás usa el principio de programación 
+dinámica(recursión inteligente) para calcular $\hat{\gamma}_{ij}$ y 
+$\hat{\delta}_j$ en tiempo lineal ($M^2T$), consta de dos pasos y explota las 
+independencias condicionales del modelo.
+
+#### Probabilidad hacia adelante {-}
+
+Definimos la probabilidad hacia adelante $\alpha_i(t)$ como la probabilidad
+conjunta de observar las primeras $t$ observaciones $x^j$ ($j=1,...,t$) y 
+siendo $i$ el estado al tiempo $t$:
+
+$$\alpha_i(t)=P(X_1=x_1,...,X_T=x_t,S_t=i)$$
+
+La probabilidad se puede evaluar de manera recursiva siguiendo la fórmula:
+
+1. $\alpha_i(1) = \pi_k p_i(x_1)$ para $i=1,...,M$
+
+2. $\alpha_i(t) = p_i(x_t)\sum_{j=1}^M \alpha_j(t-1)p_{j,i}$ para $t=2,...,T$ e
+$i=1,...,M$.
+
+**Prueba:**
+
+La idea clave es usar $(S_t,X_t) \perp (X_1,...,X_{t-1})|S_{t-1}$
+$$
+\begin{aligned}
+\alpha_i(t)&=P(x_1,...,x_t,S_t=i)\\
+&=\sum_{j=1}^M P(x_1,...,x_t,S_t=i, S_{t-1}=j)\\
+&=\sum_{j=1}^M P(x_1,...,x_{t-1},S_{t-1}=j)P(x_t|S_t=i)P(S_t=1|S_{t-1}=j)\\
+&=\sum_{j=1}^M \alpha_j(t-1)p_i(x_t)p_{j,i}\\
+\end{aligned}
+$$
+
+#### Probabilidad hacia atrás {-}
+
+Definimos la probabilidad hacia atrás $\beta_i(t)$ como la probabilidad 
+condicional de las observaciones posteriores al tiempo $t$ ($x_{t+1},...,x_T$) 
+dado que el estado al tiempo $t$ es $i$.
+
+$$\beta_i(t)=P(x_{t+1},...,x_T|S_t=i)$$
+para $t=1,...T-1$. 
+
+La recursión de la probabilidad hacia atrás se evalúa como:
+
+1. $\beta_i(T)=1$, para $i=1,...,M$.
+
+2. $\beta_i(t)=\sum_{i=1}^M p_{i,j}p_j(x_{t+1})\beta_i(t+1)$ para $t = 1,...,T-1$.
+
+**Prueba:**
+
+La idea clave es usar $X_{t+1} \perp (X_{t+2},...,X_T)|S_{t+1}$
+
+$$
+\begin{aligned}
+\beta_i(t)&=P(x_{t+1},...,x_T|S_t=i) \\
+&=\sum_{j=1}^M P(x_{t+1},...,x_T,S_{t+1}=j |S_t=i)\\
+&=\sum_{j=1}^M P(S_{t+1}=j|S_t=i) P(x_{t+1},...,x_T|S_{t+1}=j)\\
+&=\sum_{j=1}^M p_{i,j}P(x_{t+1},...,x_T|S_{t+1}=j)\\
+&=\sum_{j=1}^M p_{i,j}P(x_{t+1}|S_{t+1}=j)P(x_{t+2},...,x_T|s_{t+1}=j)\\
+&=\sum_{j=1}^M p_{i,j}p_j(x_{t+1})\beta_j(t+1)
+\end{aligned}
+$$
+
+#### Escribimos $\delta$ y $\gamma$ {-}
+
+Ahora vemos como escrbir **$\delta_j$** y $\gamma_{i,j}$ usando las 
+probabilidades hacia adelante y hacia atrás:
+
+$$
+\begin{aligned}
+\hat{\delta}_{j}(t)&=P(S_{t}=j|x)\\
+&=\frac{P(x,S_{t}=j)}{P(x)}\\
+&=\frac{\alpha_j(t)\beta_j(t)}{\sum_{i=1}^M  \alpha_i(T)}
+\end{aligned}
+$$
+
+**Prueba:**
+$$
+\begin{aligned}
+P(x_1,...,x_T,S_t=j)&=P(x_1,...,x_t,S_t=j)P(x_{t+1},...,x_T|S_t=j)\\
+&=\alpha_j(t)\beta_j(t)
+\end{aligned}
+$$
+
+Para el denominador notemos que:
+
+$$
+\begin{aligned}
+  P(x) &= \sum_i^M P(x,S_{t}=i)\\
+  &= \sum_{i=1}^M \alpha_i(t)\beta_i(t)
+\end{aligned}
+$$
+esto se cumple para cualquier $t$, así que si tomamos $t=T$:
+
+$$P(x) = \sum_{i=1}^M  \alpha_i(T)$$
+
+En el caso de **$\gamma_{i,j}$** tenemos:
+
+$$
+\begin{aligned}
+\hat{\gamma}_{ij}&=P(S_{t-1}=i,S_t=j|x)\\
+&=\frac{P(x,S_{t-1}=i,S_t=j)}{P(x)}\\
+&=\frac{\alpha_i(t-1)\beta_j(t)p_{i,j}p_j(x_{t})}{P(x)}
+\end{aligned}
+$$
+
+**Prueba:**
+$$
+\begin{aligned}
+P(x_1,...,x_T,S_{t-1}=i,S_t=j)&=P(x_1,...,x_{t-1},S_{t-1}=i)P(x_{t+1},...,X_T|S_t=j)P(S_t=j|S_{t-1}=i)P(x_t|S_t=j)\\
+&=\alpha_i(t-1)\beta_j(t)p_{i,j}p_j(x_{t})
+\end{aligned}
+$$
+
+### Resumen de algoritmo de estimación
+
+Entonces, el algoritmo de estimación itera de la siguiente manera:
+
+1. Comenzamos con valores inciales $\hat{\delta}_j$ y $\hat{\gamma}_{ij}$.
+
+2. Actualizamos los parámetros
+$$\hat{p}_{ij}=\frac{\hat{\gamma}_{ij}}{\sum_l \hat{\gamma}_{il}}$$
+y los correspondientes a las densidades $p_j(x)$.
+
+3. Utilizando el conjunto de parámetros actuales ($\hat{p}_{ij}$ y los 
+correspondientes a $p_j(x)$) calculamos $\hat{\delta}_j$ y $\hat{\gamma}_{ij}$
+a través del algoritmo hacia adelante-hacia atrás.
+
+4. Iteramos entre 2 y 3.
+
+## Algoritmo de Viterbi
+
+En muchas de las aplicaciones de HMM nos interesa hacer inferencia de la
+secuencia de estados $\{S_1,...,S_T\}$, en este caso el criterio de optimización
+es:
+
+$$MAP(S|x)=argmax_s P(S|x) = argmax_s P(S,x)$$
+
+Aqui estamos buscando el camino más probable. Si consideramos un algoritmo 
+de fuerza bruta, esto es, realizamos búsqueda exahustiva sobre todas las 
+posibles secuencias tendríamos que considerar $M^T$ casos. Es por ello que 
+nuevamente recurrimos a un algoritmo de programación dinámica.
+
+
+
