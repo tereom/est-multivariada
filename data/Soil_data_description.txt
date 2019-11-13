@@ -1,0 +1,29 @@
+This file reports several soil chemistry properties of soil samples collected at 25 cm soil depth at points located on a regular 10X25 grid with a 5 meter spacing.
+The dataset contains 250 observations and 22 variables.
+
+The variables in the file are:
+
+x: the x coordinate or coordinate of the point along the horizontal axis 
+y: the y coordinate of coordinate of the point along the vertical axis
+elevation: the elevation of the point
+sand: the percentage of sand in the sample 
+silt: the percentage of silt in the sample
+clay: the percentage of clay in the sample
+pH_water: the pH of water in the sample
+pH_KCl: the pH of potassium chloride in the sample
+calcium: the amount of calcium in the sample
+magnesium: the amount of magnesium in the sample
+potassium: the amount of potassium in the sample
+aluminum: the amount of aluminum in the sample
+hydrogen: the amount of hydrogen in the sample
+carbon: the amount of carbon in the sample
+nitrogen: the amount of nitrogen in the sample
+cation_exchange: the cation exchange capacity in the sample
+sulfur: the amount of sulfur in the sample
+volume: volume of the sample
+mass: mass of the sample
+NC: amount of NC in the sample
+CEC: cation exchange capacity of the sample
+CN: carbon/nitrogen ratio in the sample
+
+The file contains a header line.
