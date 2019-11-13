@@ -3,15 +3,7 @@
 En esta sección estudiaremos modelos de variable latente y el algoritmo de 
 esperanza-maximización.
 
-Veremos ejemplos de cada uno de los siguientes:
-
-Latentes/Observadas|  Métricas | Categóricas
--------------------|-----------|-------------
-**Métricas**| Análisis de factores (FA) | Modelos de rasgos latentes (LTM)
-**Categóricas** | Modelos de perfiles latentes (LPM) | Modelos de clases latentes (LCM)
-
-
-## Recordatorio de datos faltantes
+### Recordatorio de datos faltantes
 
 1. El modelo para los datos completos está parametrizado con $\theta$:
   $$p_{\theta}(y)$$
@@ -395,7 +387,8 @@ $$\hat{\sigma}_2^2=\frac{\sum_i(1-\hat{\gamma}^i) (x^i-\mu_2)^2}{\sum_i (1-\hat{
 mezcla de normales.
 
 
-### Mezclas gaussianas más general
+## Mezclas gaussianas
+
 Un caso más general es suponer que hay $K$ posibles clases y las distribuciones
 de la mezcla son normal multivariadas. De tal manera que 
 $$P(\delta_k^i=1)=\pi_k, \sum_{k=1}^K \pi_k =1$$
@@ -596,3 +589,882 @@ mezclas gaussianas:
 
 3. [Improved adaptive Gausian mixture model for background subtraction](http://www.zoranz.net/Publications/zivkovic2004ICPR.pdf)
 
+## PCA y Análisis de Factores
+
+Continuamos explorando modelos de variable latente, en particular exploramos
+casos de variable latente continua. Una motivación para estos modelos es que
+muchos conjuntos de datos tienen la propiedad que los puntos caen en un 
+variedad de dimensión mucho menor a la dimensión original de los datos.
+
+Para entender esta idea consideremos una base de datos consrtuida con uno de 
+los dígitos de la base de datos [mnist](http://yann.lecun.com/exdb/mnist/), 
+esta imagen esta representada por una matriz de $64 \times 64$ pixeles, ahora
+insertamos este dígito en una matriz más grande de $100 \times 100$ agregando
+espacio en blanco y variamos de manera aleatoria la orientación y ubicación 
+del dígito.
+
+<img src="img/digit_rotate.jpg" style="width: 600px;"/>
+
+Cada una de las imágenes resultantes está representada por un punto en el 
+espacio de dimensión $100 \times 100 = 10,000$; sin embargo, en una base
+de datos construida de esta manera solamente hay 3 grados de libertad de 
+variabilidad, estas corresponden a las rotaciones, trasalación vertical y 
+traslación horizontal. 
+
+Para datos reales habrá más grados de libertad debido por una parte a
+escalamiento y por otra habrá múltiples grados adicionales debidas a 
+deformaciones debidas a la variabilidad en la escritura de un individuo y entre
+individuos. Aún así, la la dimensionalidad de los grados de libertad es mucho
+menor que la de los datos completos.
+
+```{r, fig.width=9.4, fig.height=2.5}
+library(deepnet)
+library(RColorBrewer)
+
+mnist <- load.mnist("data/mnist")[["train"]]
+ind_tres <- mnist[[3]] == 3
+data_tres <- mnist[[2]][ind_tres, ]
+par(mfrow=c(1,5))
+
+imageD <- function(vec, main = NULL){
+  mat_digit <- matrix(vec, nrow = 28)[, 28:1]
+  image(mat_digit, col = brewer.pal(5, "GnBu"), xaxt = "n", yaxt = "n", 
+    bty = "n", asp = 1, main = main)
+}
+
+for(i in sample(1:nrow(data_tres), 5)){
+  imageD(data_tres[i, ])
+}
+```
+
+El modelo de variable latente más simple supone distribuciones Gaussianas para 
+las variables latentes y las observadas, además de usar dependencia lineal 
+Gaussiana entre latentes y observables. Este escenario corresponde a PCA
+probabilítsico y a análisis de factores.
+
+## Componentes principales
+
+El análisis de componentes principales (PCA) es una técnica que se utiliza 
+con distintos objetivos:
+
+1. Reducción de dimensionalidad.
+
+2. Compresión de información con pérdida (_lossy_).
+
+3. Extracción de características o (_features_).
+
+4. Visualización de datos.
+
+Podemos ver PCA desde dos puntos de vista que nos llevan al mismo resultado:
+
+<div class="caja">
+* PCA se puede definir como una proyección de los datos en un
+espacio de dimensión menor (conocido como subespacio principal), tal que 
+la varianza de los datos proyectados es máxima.
+
+* PCA se puede definir como la proyección lineal que minimiza el costo medio 
+de proyección, donde el costo promedio es la distancia media al cuadrado
+entre los puntos y sus proyecciones.
+</div>
+
+### Formulación de máxima varianza
+
+Consideremos un vector de observaciones $(y^1,...,y^n)$ donde $y_i$ es de 
+dimensión $d$. Nuestro objetivo es proyectar los datos en un espacio de 
+dimensión $M<D$ maximizando la varianza de la proyección.
+
+Comencemos considerando la proyección en un espacio de dimensión uno, denotamos
+la dirección de este espacio por $u_1$ y por conveniencia usamos un vector 
+unitario ($u_1^Tu_1=1$). La proyección de cada punto $y_i$ es un escalar (pues
+$M=1$) cuyo valor es $u_1^Ty_i$. La media de los datos proyectados es 
+$u_1^T\bar{y}$ donde 
+$$\bar{y}=\frac{1}{N}\sum_{i=1}^N y_i$$
+por tanto la varianza de los datos proyectados es
+$$\frac{1}{N}\sum_{i=1}^N (u_1^Ty_i-u_1^T\bar{y})^2=u_1^TSu_1$$
+donde S es la matriz de covarianzas de los datos:
+$$S=\frac{1}{N}\sum_{i=1}^N (y_i-\bar{y})(y_i-\bar{y})^T.$$
+
+Ahora maximizamamos la varianza de la proyección respecto a $u_1$:
+$$argmax_{u_1}u_1^TSu_1 + \lambda_1(1-u_1^Tu_1)$$
+Derivando encontramos un punto estacionario en 
+$$Su_1=\lambda_1u_1$$
+por lo que $u_1$ debe ser un eigenvector de S, notamos también que la varianza 
+esta dada por:
+$$u_1^TSu_1=\lambda_1$$
+y por tanto la varianza será máxima si igualamos $u_1$ con el mayor 
+eigenvector de $S$, que llamamos primer componente principal.
+
+Si elegimos $M>1$, definimos los componentes de manera incremental, en cada 
+paso seleccionamos una nueva dirección eligiendo cada nueva dirección como 
+aquella que maximiza la varianza de la proyección sujeta a ser ortogonal a las
+direcciones (componentes) ya elegidos. Esto resulta en que la proyección lineal
+óptima para la cual la varianza de los datos proyectados es máxima esta
+definida por el conjunto de $M$ eigenvectores $u_1,...,u_M$ de la matriz de 
+covarianzas $S$.
+
+### Formulación de error mínimo
+
+Ahora discutimos el segundo punto de vista de PCA. Sea $(u_1,...,u_D)$ una 
+base ortonormal de vectores, esto es $u_i^Tu_j = 0$ para toda $i$ distinta de 
+$j$ y $u_i^Tu_i = 1$.
+
+Como esta es una base de $R^D$ podemos expresar los datos observados como
+
+$$y_i=\sum_{j=1}^D \alpha_{ij}u_j$$
+
+Esto corresponde a una rotación en el sistema de coordenadas. Utilizando la 
+propiedad ortonormal obtenemos $\alpha_{ij}={y_i} ^Tu_j$, por tanto:
+
+$$y_i=\sum_{j=1}^D ({y_i} ^Tu_j) u_j$$
+
+Ahora, como buscamos aproximar este punto ($y_i$) usando una representación 
+que involucre un número de variables $M<D$, la subespacio de dimensión $M$
+se puede representar usando los primeros $M$ vectores de la base, de tal manera 
+que podemos aproximar cada punto como:
+
+$$\hat{y}_i=\sum_{j=1}^M x_{ij}{u_j} + \sum_{j=M+1}^D b_j u_j$$
+
+donde los valores $x_{ij}$ dependen del dato que estamos proyectando y las $b_j$
+son constantes para todos los datos. Buscamos $(u_1,...,u_D)$, $x_{ij}$ y $b_j$
+tal que se minimice la distorsión introducida por la reducción de dimensión, 
+donde definimos la distorsión como la distancia al cuadrado entre el punto
+original $y_i$ y la aproximación $\hat{y}_i$ promediada sore todos los puntos
+de la base de datos:
+
+$$J=\frac{1}{N}\sum_{j=1}^N(y_j-\hat{y}_j)^T(y_j-\hat{y}_j)$$
+
+La minimización (derivar e igualar a cero) nos lleva a:
+
+* $x_{ij}=y_i^Tu_j$, con $j=1,...,M$
+
+* $b_{j}=\bar{y}^Tu_j$, con $j=M+1,...,D$
+
+Sustituyendo $x_{ij}$ y $b_j$ en $y_i=\sum_{j=1}^D ({y_i} ^Tu_j) u_j$ llegamos a
+$$y_i-\hat{y}_i=\sum_{j=M+1}^D [(y_n-\bar{y})^Tu_j]u_j$$
+
+y vemos que el error mínimo ocurre en la proyección ortogonal sobre el 
+subespacio generado por $\{u1,...,u_M\}$.
+
+Usando lo anterior obtenemos
+
+$$J=\frac{1}{N}\sum_{j=1}^N \sum_{i=M+1}^D [(y_n-\bar{y})^Tu_j]^T[(y_n-\bar{y})^Tu_j]$$
+$$J=\frac{1}{D}\sum_{j=1}^D u_i^TSu_i$$
+
+Aún falta minimizar $J$ respecto a $u_i$, esta es una minimización con la 
+restricción $u_i^Tu_i=1$, si derivamos respecto a $u_i$ obtenemos
+
+$$Su_i=\lambda_i u_i$$
+
+por lo que cualquier eigenvector de S corresponde a un punto crítico. Si todos
+corresponden a un punto crítico ¿cómo elegimos? Notemos que si sustituimos la
+solución de $u_i$ en J obtenemos
+
+$$J=\sum_{j=M+1}^D \lambda_j$$
+
+por lo que para obtener el mínimo valor de $J$ hay que seleccionar los $D-M$
+eigenvectores corresponidientes a los menores eigenvalores y por tanto los 
+eigenvectores que definen el subespacio principal corresponden a los $M$ 
+eigenvectores mayores.
+
+### Aplicaciones de PCA
+Veamos un par de aplicaciones de PCA, comenzaremos con compresión de imágenes
+y luego examinaremos PCA como preprocesamiento.
+
+#### Compresión de datos
+
+Veamos un ejemplo de PCA para compresión de información usando la base de 
+datos de mnist, en particular veamos los dígitos tres.
+
+```{r}
+data_tres <- mnist[[2]][ind_tres, ]
+dim(data_tres)
+```
+
+Como cada eigenvector es un vector en el espcio original de $D$ dimensiones 
+podemos representarlos como imágenes.
+
+```{r, fig.width=9.4, fig.height=2.5}
+data_tres <- mnist[[2]][ind_tres, ]
+tres_mean <- apply(data_tres, 2, mean)
+
+S <- cov(data_tres)
+eigen_S <- eigen(S)
+lambda <- eigen_S$values
+u <- eigen_S$vectors
+
+par(mfrow=c(1,5))
+imageD(tres_mean)
+for(i in 1:4){
+  imageD(u[, i])  
+}
+```
+
+Podemos ver el resto de los eigenvalores en la gráfica de abajo. Graficamos 
+también la medida de distorsión $J$ asociada a la elección del número de 
+componentes $M$ (dada por la suma de los eigenvalores $M+1$ a $D$).
+
+```{r, fig.width=6, fig.height=4}
+D <- length(lambda)
+J <- sapply(1:D, function(i){sum(lambda[i:D])})
+par(mfrow=c(1,2))
+plot(lambda, type = "l")
+plot(J, type = "l")
+```
+
+Si vemos las fórmulas de arriba podemos escribir el vector de aproximación 
+correspondiente a una observación.
+
+$$\hat{y}_i=\sum_{j=1}^M x_{ij}{u_j} + \sum_{j=M+1}^D b_j u_j$$
+$$=\sum_{j=1}^M (y_i^Tu_j){u_j} + \sum_{j=M+1}^D (\bar{y}^Tu_j) u_j$$
+$$=\bar{y} + \sum_{j=1}^M (y_i^Tu_j-\bar{y}^Tu_j)u_j$$
+
+donde usamos:
+$$\bar{y}=\sum_{j=1}^D (\bar{y}^Tu_j)u_j$$
+
+La compresión está en que reemplazamos cada vector de observaciones de dimensión 
+$D$ ($y_i$) por un vector de dimensión $M$.
+
+La siguiente figura muestra la compresión para distintos valores de $M$ del
+prmer dígito de la base de datos. 
+
+```{r, fig.width=9.4, fig.height=2.5}
+tres_1 <- data_tres[3, ]
+par(mfrow=c(1,5))
+imageD(tres_1)
+for(M in c(1, 10, 50, 300)){
+  u_M <- u[, 1:M]
+  y_M <- tres_1 %*% u_M
+  y_approx <- tres_mean + y_M %*% t(u_M)
+  imageD(y_approx)
+}
+```
+
+![](img/manicule2.jpg) Comprime una imagen en blanco y negro.
+
+```{r, eval=FALSE, echo=FALSE}
+## load image
+library(bmp)
+library(pixmap)
+library(jpeg)
+
+grey <- readJPEG("img/perrito.jpg", native = FALSE)[,,1]
+
+pr <- pixmapGrey(grey)
+plot(pr)
+
+size <- dim(img)
+
+k <- 5 #was calculated with sum(s$d[1:285])/sum(s$d) = 0.9919 -> covers 99% of the data
+
+## calculate mean
+columnMeans <- colMeans(grey)
+
+## subtract mean
+greyNoMean = t(apply(grey,1,columnMeans,FUN="-"))
+
+s <- svd(greyNoMean)
+
+u_M <- s$v[,1:k]
+
+y_M <- greyNoMean %*% u_M
+
+y_approx <- y_M %*% t(u_M)
+
+pr <- pixmapGrey(y_approx)
+plot(pr)
+## add mean
+y_mean = t(apply(y_approx,1,columnMeans,FUN="+"))
+pr <- pixmapGrey(y_mean)
+plot(pr)
+```
+
+
+#### Preprocesamiento {-}
+
+Otra aplicación de componentes principales es preprocesamento, en este caso
+el objetivo no es reducción de dimensión sino la transformación de un conjunto
+de datos con el fin de estandarizar algunas de sus propiedades. Esto puede ser
+importante para el correcto funcionamiento de algoritmos o métodos que se desean 
+usar después.
+
+Veamos los datos _faithful_ de erupciones del volcán Old Faithful.
+
+```{r}
+head(faithful)
+```
+
+```{r, eval=FALSE, echo=FALSE}
+plot(faithful)
+
+pca_f <- prcomp(faithful, scale = FALSE)
+biplot(pca_f)
+pca_f <- prcomp(faithful, scale = TRUE)
+biplot(pca_f)
+
+S <- cov(faithful)
+S_1 <- eigen(S)
+L <- diag(S_1$values)
+U <- S_1$vectors
+y <- t(t(U) %*% (t(faithful) - apply(faithful, 2, mean)))
+
+y <- t(solve(sqrt(L)) %*% t(U) %*% (t(faithful) - apply(faithful, 2, mean)))
+```
+
+Notamos que
+el tiempo entre erupciones es de un orden de magnitud mayor que la duración de 
+la erupción. Por ejemplo, si quisieramos hacer k-medias sería natural 
+estandarizar los datos. Sin embargo, con PCA podemos normalizar los datos 
+para tener cero media y covarianza unitaria, de tal manera que la correlación 
+entre distintas variables es cero.
+
+Para hacer esto escribimos la ecuación de eigenvectores como 
+$$SU=UL$$
+
+donde $L$ es una matriz diagonal con los elementos $\lambda_i$ y $U$ es una 
+matriz ortogonal cuyas columnas son los vectores $u_i$. Entonces, para cada
+observación $y_i$ definimos su valor transformado 
+
+$$z_i=L^{-1/2}U^T(y_i-\bar{y})$$
+
+es claro que el conjunto $(z_1,...,z_N)$ tiene media cero, veamos ahora la 
+covarianza:
+
+$$\frac{1}{N}\sum_{j=1}^Nz_jz_j^T=\frac{1}{N}\sum_{j=1}^NL^{-1/2}U^T(y_j-\bar{y})(y_j-\bar{y})^TUL^{-1/2}$$
+
+$$=L^{-1/2}U^TSUL^{-1/2}=L{-1/2}LL^{-1/2}=I$$
+
+Esta operación se conoce como _whitening_ o _sphereing_.
+
+```{r, echo=FALSE,eval=FALSE}
+head(faithful)
+par(mfrow=c(1, 2))
+
+ggplot(faithful, aes(x = eruptions, y = waiting)) +
+  geom_point()
+
+faith_pca <- prcomp(faithful, scale. = TRUE)
+
+faithful$pc1 <- faith_pca$x[, 1]
+faithful$pc2 <- faith_pca$x[, 2]
+ggplot(faithful, aes(x = pc1, y = pc2)) +
+  geom_point()
+```
+
+![](img/manicule2.jpg) Implementa _whitening_ en los datos
+_faithful_, compara las gráficas de los datos crudos y preprocesados.
+
+## PCA probabilístico y Análisis de Factores
+
+La formulación de PCA esta fundada en una proyección lineal de los datos sobre
+un subespacio de dimensión menor. En esta sección veremos que PCA también se 
+puede expresar como la solución de máxima verosimilitud de en un modelo 
+probabilístico de variable latente.
+
+Para formular PCA probabilístico introducimos una variable latente $X$ que
+corresponde al subespacio de componentes principales, suponemos $X\sim N(0, I)$.
+Por otra parte, la distribución de la variable aleatoria observada $Y$ 
+condicional a la variable latente $X$ es $Y|X\sim N(Wx+\mu, \sigma^2I$
+
+Veremos que las columnas de $W$ (dimensión $D\times M$) generan un subsepacio 
+que correponde al subespacio de componentes principales.
+
+El siguiente esquema explica el modelo PCA probabilístico desde el punto de
+vista generativo.
+
+<img src="img/PCA_p.png" style="width: 600px;"/>
+
+Desde este enfoque vemos que primero selecciona aleatoriamente un valor de la 
+variable latente ($x$) y después muestreamos el valor observado condicional
+a la variable latente, en particular la variable obsevada (de dimensión $D$)
+se define usando una transformación lineal del espacio latente mas ruido 
+Gaussiano aleatorio:
+
+$$y=Wx + \mu + \epsilon$$
+
+donde $x\sim N(0, I)$ de dimensión $M$ y $\epsilon \sim N(0, \sigma^2I)$ de 
+dimensión $D$.
+
+Ahora, si queremos usar máxima verosimilitud para estimar $W$, $\mu$ y 
+$\sigma^2$, necesitamos una expresión para la distribución marginal de la 
+variable observada:
+
+$$p(y)=\int p(y|x)p(x)dx$$
+
+dado que este corresponde a un modelo Gaussiano lineal su distribución marginal
+es nuevamente Gaussiana con media $\mu$ y matriz de covarianzas 
+$C=WW^T+\sigma^2I.$
+
+Entonces, la distribución $p(y)$ depende de los parámetros $W$, $\mu$ y 
+$\sigma^2$; sin embargo hay una redundancia en la parametrización que 
+corresponde a rotaciones en el espacio de coordenadas de las variables latentes.
+Para ver esto consideremos $Q$ una matriz ortonormal de dimensión $D \times D$ 
+($Q$ es una matriz de rotación),
+$$Q^T Q = Q Q^T = I$$
+Al observar la igualdad $C=WW^T+\sigma^2I$, notamos que no existe una única $W$ 
+que la satisfaga pues si definimos $\tilde{W}=WQ$ tenemos que
+$$\tilde{W}\tilde{W}^T=WQQ^TW^T=WW^T$$
+y por tanto $C=\tilde{W}{W}^T+\sigma^2I$. Este es un aspecto que consideraremos
+más a fondo en la parte de estimación.
+
+#### Máxima verosimilitud {-}
+
+Consideramos la determinación de los parámetros usando máxima verosimilitud:
+$$
+\begin{aligned}
+\log p(y)&=\sum_{i=1}^N\log p(y_j)\\
+&=-\frac{ND}{2}-\frac{N}{2}\log(2\pi)\log|C| -\frac{1}{2}\sum_{j=1}^N(y_j-\mu)^TC^{-1}(y_j-\mu)
+\end{aligned}
+$$
+
+Derivando e igualando a cero obtenemos $\hat{\mu}=\bar{y}$, la maximización 
+con respecto a $W$ y $\sigma^2$ es más difícil pero tiene forma cerrada ([Tipping y Bishop 1999](http://research.microsoft.com/pubs/67218/bishop-ppca-jrss.pdf)). 
+
+$$\hat{W}=U_{M}(L_M-\sigma^2I)^{1/2}R$$
+
+donde $U_{M}$ es una matriz de dimensión $D \times M$ cuyas columnas 
+corresponden a los $M$ eigenvectores asociados a los mayores eigenvalores de la 
+matriz de covarianzas $S$. La matriz $L$ de dimensión $M \times M$ esta 
+conformada por los eigenvalores correspondientes. Por último, R res cualquier
+matriz ortonormal de dimensión $M \times M$.
+
+Suponemos que los eigenvectores están ordenados en orden decreciente de 
+acuerdo a sus eigenvalores correspondientes $u_1,...,u_M$, en este caso las 
+columnas de $W$ definen el subespacio de PCA estándar. Por su parte, la solución
+de máxima verosimilitud para $\sigma^2$ es:
+
+$$\hat{\sigma^2}=\frac{1}{D-M}\sum_{j=M+1}^D \lambda_j$$
+
+notemos que $\hat{\sigma}^2$ es la varianza promedio asociada a las dimensiones
+que no incluimos.
+
+Ahora, como R es ortogonal se puede interpretar como una matriz de rotación en
+el espacio de variables latentes. Por ahora, pensemos $R=I$ notamos que las
+columnas de $W$ son los vectores de componentes principales escalados por los
+parámetros de varianza $\lambda_i-\sigma^2$, para ver la interpretación 
+notemos que en la suma de Gaussianas independientes las varianzas son aditivas.
+Por tanto, la varianza $\lambda_i$ en la dirección de un eigenvector $u_i$ se 
+compone de la contribución $(\lambda_i-\sigma^2)$ de la proyección del espacio 
+latente (varianza 1) al espacio de los datos a través de la columna 
+correspondiente de $W$ mas la contribución del ruido con varianza isotrópica 
+$\sigma^2$.
+
+#### Observaciones {-}
+
+* El método convencional de PCA se suele describir como una proyección de los 
+puntos en un espacio de dimensión $D$ en un subespacio de dimensión $M$.
+
+* PCA probabilístco se expresa de manera más natural como un mapeo del espacio
+latente al espacio de los datos observados.
+
+* Una función importante de PCA probabilítico es definir una distribución 
+Gaussiana multivariada en donde el número de grados de libertad se puede 
+controlar al mismo tiempo que podemos capturar las correlaciones más importantes
+de los datos. En general una distribución Gaussiana multivariada tiene 
+$p(p+1)/2$ parámetros independientes en la matriz de covarianzas por lo que el 
+número de parámetros crece de manera cuadrática con $p$. Por otra parte si 
+restringimos a una matriz de covarianzas diagonal tenemos solamente $p$ 
+parámetros, sin embargo en este último caso no podemos entender las 
+correlaciones. PCA probabilístico (y Análisis de Factores) son un punto medio en 
+el que las $q$ correlaciones más fuertes se pueden capturar mientras que el 
+número de parámetros crece de manera lineal con $p$. En el caso de PCA con $M$ 
+componentes: $p\cdot M + 1 - M\cdot(M-1)/2$.
+
+* PCA convencional corrresponde al límite $\sigma^2 \to 0$
+
+* PCA probabilístico se puede escribir en términos de un espacio latente por lo 
+que la implementación del algoritmo EM es una opción natural. En casos donde
+$M<<D$ la estimación mediante EM puede ser más eficiente. 
+
+* Debido a que tenemos un modelo probabilitico para PCA podemos trabajar con 
+faltantes (MCAR y MAR) marginalizando sobre la distribución de los no observados.
+El manejo de faltantes es otra ventaja de la implementación EM.
+
+* El algoritmo EM se puede extender al caso de Análisis de factores para el 
+cuál no hay una solución cerrada.
+
+### Análisis de factores
+
+El análisis de factores es muy similar a PCA probabilístico, la diferencia 
+radica en que en la distribución condicional de $Y|X$ la matriz de covarianza se 
+supone diagonal en lugar de isotrópica:
+
+$$Y|X \sim N(Wx + \mu, \Psi)$$
+
+Donde $\Psi$ es una matriz diagonal de dimensión $D \times D$. Al igual que en
+PCA probabilístico, el modelo de FA supone que las variables observadas son 
+independientes dado las latentes. En escencia el análisis de factores está 
+explicando la estructura de covarianza observada representando la varianza  
+independiente asociada a cada variable en la matriz $\Psi$ (unicidades) y 
+capturando la varianza compartda en $W$ (comunalidades o cargas).
+
+La distribución marginal de las variables observadas es $X\sim N(\mu, C)$
+donde 
+$$C=WW^T+\Psi.$$
+Es fácil notar que de manera similar a PCA probabilístico el modelo es 
+invariante a rotaciones en el espacio latente.
+
+El análisis de factores suele ser criticado cuando se busca interpretar los
+factores (coordenadas en el espacio latente). El probema resulta de que los
+factores no están identificados ante rotaciones. Ante esto, Bisop explica que 
+podemos ver el análisis de factores como un modelo de variable latente en el que 
+nos interesa el espacio latente más no la elección particular de coordenadas que
+elijamos para describirlo.
+
+#### Análisis de factores (descripción tradicional) {-}
+
+Trataremos ahora con análisis de factores, los modelos que veremos se enfocan en
+variables observadas y latentes continuas. La idea esencial del análisis de 
+factores es describir las relaciones entre varias variables observadas 
+($Y=Y_1,...,Y_p$) a través de variables latentes ($X_1,...,X_q$) donde $q < p$.
+Como ejemplo consideremos una encuesta de consumo de hogares, donde observamos
+el nivel de consumo de $p$ productos diferentes. Las variaciones de los 
+componentes de $Y$ quizá se puedan explicar por 2 o 3 factores de conducta del
+hogar, estos podrían ser un deseo básico de comfort, o el deseo de alcanzar 
+cierto nivel social u otros conceptos sociales. Es común que estos factores 
+no observados sean de mayor interés que las observaciones en si mismas.
+
+En la gráfica inferior vemos un ejemplo en educación donde las variables 
+_vocab, reading, maze,..._ corresponden a las variables observadas mientras que 
+$X_1$ y $X_2$ son las variables latentes. Observamos que añadir _estructura_ al
+problema resulta en una simplificación del modelo. 
+
+```{r, warning=FALSE,message=FALSE,echo=FALSE}
+library(igraph)
+library(bnlearn) 
+areas <- colnames(ability.cov$cov)
+ug <- empty.graph(areas)
+arcs(ug) = matrix(c("general", "picture", "general", 
+  "blocks", "general", "maze", "general", "reading", "general", "vocab", 
+  "picture", "blocks", "picture", "maze", "picture", "reading", "picture", 
+  "vocab", "blocks", "maze", "blocks", "reading", "blocks", "vocab", 
+  "maze", "reading", "maze", "vocab", "reading", "vocab"), ncol = 2, 
+  byrow = TRUE, dimnames = list(c(), c("from", "to")))
+plot(ug)
+
+ug <- empty.graph(c("X1", "X2", areas))
+arcs(ug) = matrix(c("X1", "general","X1", "picture", "X1", 
+  "blocks", "X1", "maze", "X1", "reading", "X1", "vocab", "X2", "general", "X2",   
+  "picture", "X2", "blocks", "X2", "maze", "X2", "reading", "X2", "vocab"), 
+  ncol = 2, 
+  byrow = TRUE, dimnames = list(c(), c("from", "to")))
+plot(ug)
+```
+
+En ocasiones, el análisis de factores se utiliza como una técnica de reducción 
+de dimensión que esta basada en un modelo. Idealmente, toda la información en 
+la base de datos se puede reproducir por un número menor de factores.
+
+#### El modelo {-}
+
+Sea $Y = (Y_1,...,Y_p)^T$ un vector de variables aleatorias observables donde
+todas las variables son cuantitativas. Supongamos que cada $Y_j$ en $Y$ ($j=1,...,p$) satisface: 
+$$Y_j = \sum_{k=1}^K \lambda_{jk} X_k + u_j$$
+donde
+* $X_k$ son los factores comunes (variables aleatorias continuas no observables).
+
+* $u_j$ son errores (aleatorios).
+
+* $\lambda_{jk}$ son las _cargas_ de la variable $j$ en el factor $k$, 
+(parámetros).
+
+En notación matricial el modelo se escribe:
+$$Y_{p\times 1} = \Lambda_{p\times K} X_{K\times 1} + U_{p\times 1}$$
+donde $\Lambda, X$ y $U$ no son observadas, únicamente observamos $Y$.
+
+Adicionalmente, tenemos los siguientes supuestos:
+
+* $X \perp U$, esto es, los errores y los factores son independientes.
+
+* $E(X)=E(U)=0$.
+
+* $Cov(X) = I_k$ (modelo ortogonal de factores) ésto se ve en la  gráfica pues 
+no hay arcos que unan a $X_1$ y $X_2$.
+
+* $Cov(U) = \Psi$, donde $\Psi$ es una matriz diagonal ($p \times p$).
+
+Típicamente, se asume que $U$ y $X$ son Normales multivariadas. ¿Cómo vemos
+que $Y_i \perp Y_j|X$
+
+Lo que buscamos es explicar la relación entre las variables observadas a través 
+de las variables latentes, las relaciones que buscamos explicar están resumidas 
+en la matriz de varianzas y covarianzas. En nuestro ejemplo la matriz es la 
+siguiente:
+
+```{r}
+ability.cov$cov
+```
+
+y la matriz de correlaciones es:
+
+```{r}
+cov2cor(ability.cov$cov)
+```
+
+Entonces, volviendo al modelo examinemos que implicaciones tiene en la matriz de
+varianzas y covarianzas de las variables aleatorias observables. Denotemos la 
+matriz de varianzas y covarianzas por $\Sigma = Var(Y)$ y la expresaremos en 
+términos de los parámetros del modelo. 
+
+$$\Sigma = \Lambda \Lambda^T + \Psi$$
+
+Los términos en la diagonal de $\Sigma$ (varianzas de cada variable observada) 
+son:
+
+$$Var(Y_j) = \sum_{k= 1}^K \lambda_{jk}^2 + \Psi_{jj}$$
+$$= comunalidad + unicidad$$
+
+La __comunalidad__ de la variable $Y_j$ dada por $\sum_{k= 1}^K \Lambda^2(j,k)$ 
+es la varianza que comparte esta variable con 
+otras variables por medio de los factores, mientras que la __unicidad__ 
+$\Psi(j,j)$ es la varianza de la variable $j$ que no comparte con el resto.
+Un buen análisis de factores tiene comunalidades altas y unicidades bajas 
+(relativamente).
+
+Los términos fuera de la diagonal están dados por:
+
+$$Cov(Y_j, Y_i)= \sum_{k=1}^K\lambda_{jk}\lambda_{ik}$$
+
+![](../../computo/img/manicule2.jpg)  Sea 
+$X \sim N(0, 1), u_1 \sim N(0,1),u_2 \sim N(0,2)$. Definimos 
+$$Y_1 = X + u_1$$
+$$Y_2 = -X+u_2$$
+
+* Comunalidades:
+
+* Unicidades:
+
+* Descomposición de la matriz de varianzas y covarianzas:
+
+**Ejemplo:** Pruebas de habilidad.
+```{r}
+ability_fa <- factanal(factors = 2, covmat = ability.cov, rotation = "none")
+ability_fa
+```
+
+
+#### Estimación del modelo {-}
+Antes de adentrarnos en la estimación vale la pena considerar dos aspectos:
+
+1.  **Rotaciones**: Al observar la igualdad $\Sigma = \Lambda\Lambda^T + \Psi$, 
+notamos que no existe una única $\Lambda$ que la satisfaga. Sea $Q$ una matriz
+ortonormal de dimensión $K \times K$ ($Q$ es una matriz de rotación),
+$$Q^T Q = Q Q^T = I$$ 
+Si $\Lambda$ es tal que $Y = \Lambda X + U$ y $\Sigma = \Lambda\Lambda^T + \Psi$ entonces,
+$$Y=(\Lambda Q)(Q^TX) + U$$
+$$\Sigma = (\Lambda Q) (\Lambda Q)^T + \Psi =  \Lambda\Lambda^T + \Psi$$
+por lo tanto, $\Lambda_1 = (\Lambda Q)$ y $X_1 = Q^TX$ también son una solución 
+para el modelo. Esto nos dice, que cualquier rotación de las cargas nos da una 
+solución.
+Hay amplia literatura en este tema, típicamente la elección de una rotación 
+busca mejorar la interpretación.
+
+2. **¿Cuántos factores?:** No hay una respuesta directa a la pregunta pero para 
+aspirar a contestarla respondamos primero: ¿Cuántos factores puedo estimar? 
+Contemos el número de parámetros que vamos a estimar y veamos los grados de 
+libertad:  
++ Parámetros en $\Sigma:p(p+1)/2$  
++ Parámetros en $\Lambda$ y $\Psi:pK + p$  
++ Restricciones necesarias para fijar la rotación: $K(K-1)/2$  
++ Grados de libertad: $d = p(p+1)/2 - (pK + p - K(K-1)/2)$  
+Si $d < 0$, no podemos estimar el modelo, por lo tanto el mayor número de 
+factores que puedo estimar depende del número de variables observadas. Por 
+ejemplo si $p = 5$, únicamente podemos estimar modelos con 1 ó 2 factores.  
+Volviendo a la pregunta original: ¿Cuántos factores debo modelar? La respuesta 
+depende del objetivo del análisis de factores, en ocasiones se desea utilizar 
+las variables latentes como un _resumen__ de las variables observadas e 
+incorporarlas a ánalisis posteriores, en este caso es conveniente analizar el 
+porcentaje de la varianza en las variables observadas que se puede explicar con 
+los factores, por ejemplo si el tercer factor no contribuye de manera importante 
+a explicar la variabilidad observada, el modelo con dos factores sería 
+preferible. Por otra parte, si asumimos normalidad 
+($X\sim N(0, I), U\sim N(0, \Psi)$) podemos comparar la verosimilitud (o AIC, 
+BIC) de los modelos con distinto número de factores y elegir de acuerdo a este 
+criterio.
+
+Una vez que fijamos el número de factores, hay varios métodos de estimación, el 
+más popular implementa el algoritmo __EM__, sin embargo este método requiere 
+supuestos de normalidad. Dentro de los métodos que no requieren supuestos 
+adicionales está el método de __factores principales__. 
+
+#### Método del factor principal {-}
+
+En adelante utilzamos la matriz de covarianzas muestral,
+$$S = \frac{1}{N} \sum_{n = 1}^N(X_n-\bar{X})(X_n-\bar{X})^T$$
+como la estimación de la matriz de covarianzas poblacional $\Sigma$.
+Usualmente no es posible encontrar matrices $\hat{\Lambda},\hat{\Psi}$ tales que la igualdad $S = \hat{\Lambda}\hat{\Lambda}^T+\hat{\Psi}$ se cumpla de manera exacta. Por tanto el objetivo es encontrar matrices tales que se minimice $traza(S-\hat{S})^T(S-\hat{S})$ donde $\hat{S} = \hat{\delta}\hat{\delta}^T+\hat{Psi}$.
+El algoritmo del método del factor principal funciona de la siguiente manera:
+
+1. Inicializa $\hat{\Psi}$ (cualquier valor)
+
+2. $\hat{\Psi}=$ los $K$ mayores eigenvectores de la matriz 
+$$(\hat{S} - \hat{\Psi})$$ Nos fijamos en esta diferencia porque nos interesa
+explicar las covarianzas a través de los factores comunes.
+
+3. $\hat{\Psi} = diag(S-\hat{\Lambda}\hat{\Lambda}^T)$
+
+Los pasos 2 y 3 se repiten hasta alcanzar convergencia. Este algoritmo no es muy
+popular debido a que la convergencia no está asegurada, se considera lento y los
+valores iniciales de $\Psi$ suelen influenciar la solución final.
+
+#### Análisis de factores de máxima verosimilitud {-}
+
+Supongamos ahora que,
+$$X \sim N(0, I)$$
+$$U \sim N(0,\Psi)$$
+Entonces la distribución del vector de variables aleatorias observables $Y$ es
+$$Y \sim N(\mu + \Lambda x, \Sigma)$$
+donde $\Sigma = \Lambda \Lambda^T + \Psi$ (igual que antes).
+Es fácil ver que la distribución condicional de $Y$ es:
+$$Y|X \sim N(\mu + \Lambda x, \Psi)$$
+por tanto, se cumple las independencias condicionales que leemos en la gráfica.
+Ahora, la log verosimilitud es:
+$$log L(\Sigma) = - \frac{np}{2} log(2\pi) - \frac{n}{2}log det(\Sigma) - \frac{n}{2}tr(\Sigma^{-1}S)$$
+buscamos parámetros$\hat{\Lambda}$ y $\hat{Psi}$ que maximizen esta log-verosimilitud, sin embargo, estos parámetros no se pueden separar facilmente (es decir maximizar individualmente) ya que están relacionados a través de $det(\Sigma)$ y $\Sigma^{-1}$. No hay una forma cerrada para encontrar los parámetros de máxima verosimilitud de la expresión anterior. Recurrimos entonces al algoritmo __EM__, donde en el paso __E__ _rellanamos_ los valores de $X$ y en el paso __M__ estimamos $\Lambda$ y $\Psi$ utilizando que éstos parámetros se pueden separar si conozco $X$.
+
+#### Evaluación del modelo {-}
+
+Volviendo al número de factores, una vez que hacemos supuestos de normalidad podemos calcular la devianza del modelo:
+$$D = n*(tr(\hat{\Sigma}^{-1}S) - log det(\hat{\Sigma}^{-1}S) - p)$$ 
+y el BIC. Por tanto, podemos comparar modelos con distintos factores utilizando este criterio.
+$$d = p - {1}{2}((p-q)^2 - (p+q))$$
+y por tanto $BIC = D + d log N$.
+
+```{r}
+library(psych)
+dev <- function(fit){
+  S <- fit$correlation
+  n <- fit$n.obs
+  p <- nrow(S)
+  Sigma <- (fit$loadings) %*% t(fit$loadings) + diag(fit$uniqueness)
+  mat.aux <- solve(Sigma) %*% S
+  D <- n * (tr(mat.aux) - log(det(mat.aux)) - p)
+  return(D)
+}
+BIC <- function(fit){
+  p <- nrow(fit$loadings)
+  q <- ncol(fit$loadings)
+  v <- p - 1/2 * ((p - q) ^ 2 - (p + q))
+  D <- dev(fit)
+  BIC <- D + v * log(fit$n.obs) / 2
+  return(BIC)
+}
+ability.fa.1 <- factanal(factors = 1, covmat = ability.cov, 
+  rotation = "none")
+ability.fa.2 <- factanal(factors = 2, covmat = ability.cov, 
+  rotation = "none")
+ability.fa.3 <- factanal(factors = 3, covmat = ability.cov, 
+  rotation = "none")
+BIC(ability.fa.1)
+BIC(ability.fa.2)
+BIC(ability.fa.3)
+```
+
+
+Veamos también el porcentaje de la varianza observada que se puede explicar con los distintos modelos.
+
+```{r}
+ability.fa.1
+ability.fa.2 
+ability.fa.3
+```
+
+
+Finalmente, volvamos a las rotaciones. La interpretación de los factores se 
+facilita cuando cada variable observada _carga_ principalmente en un factor, 
+por ello, muchos de los métodos de rotación buscan acentuar esta característica:
+
+* Rotación __varimax__: Resulta en algunas cargas altas y otras bajas para cada 
+factor, de manera que las cargas bajas se puedan ignorar en la interpretación.
+Su nombre se debe a que maximiza la suma de las varianzas de las cargas al 
+cuadrado. En términos de las observaciones (individuos) la rotación varimax
+busca una base que represente cada individuo de la manera más económica, esto 
+es, cada individuo se puede describir usando una combinación lineal de 
+únicamente unos cuantos factores.
+
+* Rotación __promax__: Esta es una rotación _oblicua_, lo que implica que se 
+pierde la ortogonalidad de los factores. El resultado de esta rotación es que 
+usualmente las cargas se vuelven incluso más extremas que con la rotación 
+varimax.
+
+```{r}
+ability.varimax <- factanal(factors = 2, covmat = ability.cov, 
+  rotation = "varimax")
+ability.promax <- factanal(factors = 2, covmat = ability.cov, 
+  rotation = "promax")
+cbind(ability.varimax$loadings, ability.promax$loadings) # cutoff = 0.1
+```
+
+#### Visualización {-}
+
+Cuando realizamos componentes principales es común querer proyectar los datos en las componentes. En el caso de AF no es tan sencillo porque los factores son aleatorios, pero hay métodos para calcular puntajes (scores).
+
+* Método de Bartlett. Supongamos que conocemos $\Lambda$ y $\Psi$, denotemos los puntajes del individuo $i$ en los factores por $x_i$, entonces si $y_i$ es el vector de variables observables del i-ésimo individuo, tenemos que $y_i$ dada $x_i$ se distribuye $N(\Lambda x_i, \Psi)$, por lo que la log-verosimilitud de la observación $y_i$ esta dada por
+$$-\frac{1}{2} log|2\pi\Psi| - \frac{1}{2}(y_i- \Lambda f_i)^T \Psi^{-1}(y_i - \Lambda x_i)$$
+Derivando e igualando a cero se obtiene: 
+$$\hat{x}_i = (\Lambda^T\Psi^{-1}\Lambda)\Lambda^T\Psi^{-1}y_i$$
+
+* Método de Thompson. Consideramos $x_i$ aleatorio, i.e. $X\sim N(0,I)$, entonces $f|y$ se distribuye $N(\Lambda^T\Psi^{-1}y, I-\Lambda^T \Psi^{-1}\Lambda)$ por lo que un estimador natural para $x_i$ es
+$$\hat{x}_i = \Lambda^T\Psi^{-1}y_i$$
+
+
+**Ejemplo.** La base de datos wine contiene medidas en 13 atributos diferentes de 180 vinos.
+
+```{r, fig.height=5}
+library(gridExtra)
+library(ggplot2)
+
+wine <- read.csv("data/wine.csv", header=T)
+head(wine)
+pc.wine.1 <- princomp(wine, scores = TRUE)
+
+fa.wine <- factanal(wine, factors = 2, scores = "Bartlett")
+fa.pc.wine <- data.frame(fa1 = fa.wine$scores[, 1], pc1 = pc.wine.1$scores[, 1], 
+  fa2 = fa.wine$scores[, 2], pc2 = pc.wine.1$scores[, 2])
+
+
+comp_1 <- ggplot(fa.pc.wine, aes(x = fa1, y = pc1)) + 
+  geom_point()
+comp_2 <- ggplot(fa.pc.wine, aes(x = fa1, y = pc2)) + 
+  geom_point()
+
+grid.arrange(comp_1, comp_2, ncol = 2)
+
+pc.wine.2 <- princomp(wine, scores = T, cor = T)
+
+fa.pc.wine <- data.frame(fa1 = fa.wine$scores[, 1], pc1 = pc.wine.2$scores[, 1], 
+  fa2 = fa.wine$scores[, 2], pc2 = pc.wine.2$scores[, 2])
+
+comp_1 <- ggplot(fa.pc.wine, aes(x = fa1, y = pc1)) + 
+  geom_point()
+comp_2 <- ggplot(fa.pc.wine, aes(x = fa2, y = pc2)) + 
+  geom_point()
+
+grid.arrange(comp_1, comp_2, ncol = 2)
+par(mfrow=c(1,2))
+biplot(pc.wine.1)
+biplot(pc.wine.2)
+
+# Ejemplo simulación
+x1 <- rnorm(1000)
+x2 <- x1 + 0.001 * rnorm(1000)
+x3 <- 10 * rnorm(1000) 
+
+x <- data.frame(x1, x2, x3)
+
+fact.x <- fa(x, factors = 1, covar = TRUE, fm ="ml")
+pc.x <- princomp(x)
+fact.x$loadings
+pc.x$loadings
+
+y <- scale(x)
+
+fact.y <- fa(y, factors = 1, fm ="ml")
+pc.y <- princomp(y)
+fact.y$loadings
+pc.y$loadings
+
+fact.y
+
+```
+
+En el ejemplo de simulación vemos que el análisis de componentes principales se alinea con la dirección de máxima varianza $X_3$ mientras que el análisis de factores ignora el componente no correlacionado y captura el componente correlacionado $X_2 + X_1$. Debido a que en FA modelamos diferentes _unicidades_ $u_j$ para cada $Y_j$ el análisis de factores puede verse como un modelo para la estructura de correlación de $Y_j$ en lugar de la estructura de covarianzas.
