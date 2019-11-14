@@ -15,6 +15,13 @@ condicionados).
 posible utilizar modelos locales de probabilidades condicionales como en los 
 modelos dirigidos.
 
+En esta sección utilizaremos los paquetes:
+
+* `gRbase`  
+* `gRim`
+
+Y las principales referencias son @bishop, @Whittaker, @soren.
+
 ## Definiciones y propiedades
 
 Comenzamos estableciendo conceptos y propiedades necesarios para entender las
@@ -423,9 +430,6 @@ tabla de contingencias.
 observaciones y $d=3$ variables.
 
 ```{r}
-library(gRbase)
-library(gRim)
-
 data(lizard)
 ```
 
@@ -749,7 +753,7 @@ $X_i$ el verdadero valor del pixel $i$ (este es el valor que buscamos inferir) y
 problema suponemos una correlación fuerte entre $X_i$ y $Y_i$, además de haber correlación positiva entre pixeles vecinos $X_i$ y $X_j$. La gráfica 
 correspondiente a este modelo se muestra a continución.
 
-<img src="imagenes/mrf_graph.png" style="width: 300px;"/>
+<img src="img/mrf_graph.png" style="width: 300px;"/>
 
 La gráfica muestra dos tipos de cliques, cada uno con dos variables. Los cliques 
 de la forma $\{X_i, Y_i\}$ a la que asociaremos una función de energía que 
@@ -767,7 +771,7 @@ $x_i \in \{-1,1\}$, el ruido se añade cambiando el signo de los pixeles de la
 imagen original con una probabilidad baja. La figura de abajo es un ejemplo 
 donde se cambio el signo de los pixeles con probabilidad 0.10.
 
-![](imagenes/bayes_t.png)
+![](img/bayes_t.png)
 
 Capturamos la relación entre $X_i$ y $Y_i$ asociando la función de energía 
 $-\eta x_i y_i$ donde $\eta$ es una constante positiva, observemos que la 
@@ -901,14 +905,14 @@ icm <- function(image, sdev = 25, max.diff = 200, weight.diff = 0.15,
 }
 
 perro_c <- icm(perro_n)
-#writeJPEG(perro_n / 255, "imagenes/p_ruido.jpg")
-#writeJPEG(perro_c / 255, "imagenes/p_recuperado_2.jpg")
+#writeJPEG(perro_n / 255, "img/p_ruido.jpg")
+#writeJPEG(perro_c / 255, "img/p_recuperado_2.jpg")
 
 pr_c <- pixmapGrey(perro_c/255)
 plot(pr_c)
 ```
 
-![](imagenes/perritos3.png)
+![](img/perritos3.png)
 
 El siguiente es un ejemplo de clasificación de pixeles usando redes markovianas.
 En este ejemplo se tienen dos imágenes satelitales (1000x1000 pixeles cada una)
@@ -921,7 +925,7 @@ menos ruidosos.
 
 ![](img/satelitales.png)
 
-#### Referencias
+#### Ligas relacionadas a procesamiento de imágenes {-}
 
 * [Boykov, Funka-Lea](http://lvelho.impa.br/ip13/reading/ijcv06.pdf) Graph
 Cuts and Efficient N-D Image Segmentation.   
@@ -934,7 +938,6 @@ Western Ontario.
 
 * [Blake y Kohli](http://www.cs.toronto.edu/~kyros/courses/2503/Handouts/Blake2011.pdf) handouts, Introduction to MRF.  
 
-* [Bishop](http://www.amazon.com/Pattern-Recognition-Learning-Information-Statistics/dp/0387310738) Pattern Recognition and Machine Learning.
 
 ## Comparación entre modelos gráficos dirigidos y no dirigidos
 
@@ -1027,7 +1030,7 @@ Consideremos ahora el problema de encontrar una red Bayesiana que se un mapeo mi
 
 **Ejemplo**
 
-<img src="imagenes/crop_gd.png" style="width: 400px;"/>
+<img src="img/crop_gd.png" style="width: 400px;"/>
 
 Consideremos la estructura de la red Markoviana de la figura de arriba y 
 supongamos que buscamos una mapeo de esta red en una red bayesiana. Una manera 
