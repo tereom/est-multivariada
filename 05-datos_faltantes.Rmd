@@ -1,0 +1,1055 @@
+# Datos faltantes
+
+El problema de datos faltantes surge en casi todo análisis estadístico. En esta
+sección nos introducimos al problema de faltantes en el contexto de redes 
+bayesianas y después abordamos el problema en un contexto más general.
+
+Discutiremos distintos mecanismos de censura de datos y técnicas de imputación.
+
+Usaremos el paquete de R `mi` y `visdat`.
+
+La referencia principal es @gelman-hill, @rubin.
+
+## Datos faltantes en redes bayesianas
+
+Recordemos que dada una estructura gráfica dirigida ${\mathcal G}$, consideramos
+modelos de la forma
+
+$$p(x,\theta)=\prod_{j=1}^k p(x_j|Pa(x_j),\theta)$$
+
+donde $\theta$ contiene todos los parámetros de los modelos locales.
+Dada una muestra $\mathcal L$, podemos estimar $\theta$ maximizando la
+verosimilitud
+$$L(\theta;{\mathcal L})=\prod_{i=1}^n p(x^{(i)}, \theta).$$
+Recordamos también que en este problema los parámetros de cada modelo local
+se separan en factores distintos, de forma que la verosimilitud se descompone
+según la factorización de la primera ecuación.
+
+Ahora queremos entender qué hacer cuando hay datos faltantes en la muestra
+$\mathcal L$. 
+
+**Ejemplo.** Escogemos al azar una moneda y luego tiramos un volado con esa 
+moneda:
+```{r}
+ej_1 <- data.frame(moneda = c('A', 'A', 'B', 'B', 'B', NA), 
+  sol = c(1, 0, 0, 0, 1, 0))
+ej_1
+```
+
+Suponemos que no sabemos la moneda que se usó para el último volado. ¿Cómo 
+procederíamos para hacer la estimación de los parámetros de este modelo (son 3)? 
+
+Cuando tenemos datos faltantes, podemos proceder según varias alternativas:
+
+* __Eliminar faltantes:__ eliminamos todos los renglones de los datos con casos 
+faltantes, y procedemos como si no hubiéramos hecho este filtro.
+Cuando la proporción de faltantes es relativemente chica, entonces esta 
+estrategia no es problemática,  pues es difícil que los datos no observados, si 
+los conociéramos, cambien el resultado del análisis (por ejemplo, si eliminamos 
+menos de 1\% de los datos).
+
+* __Incluir en el modelo la ocurrencia de faltantes/censurados:__ hacer 
+supuestos sobre el mecanismo de faltantes, e incluir en el modelo. Esto implica 
+adaptar la verosimilitud para lidiar con estos datos faltantes. Esta estrategia 
+es en general difícil de llevar a cabo, excepto si ciertos supuestos acerca de 
+los faltantes se cumple.
+
+* __Imputar datos faltantes:__ encontrar un proceso de imputación razonable 
+(preferentemente aleatorio). Repetir el análisis de máxima verosimilitud con 
+distintas imputaciones posibles y analizar la variabilidad de los resultados.
+\end{itemize}
+
+En general, las últimas dos estrategias son las únicas que tienen sentido. En 
+esta parte, nos concentraremos en la segunda: ¿cómo hacemos máxima verosimilitud 
+con datos faltantes?
+
+**Ejemplo**. En nuestro ejemplo no podemos simplemente ignorar los datos. 
+Supongamos el modelo moneda -> sol. Eliminando la observación última, máxima 
+verosimilitud equivale a hacer conteos, y obtendríamos
+
+```{r}
+prop.table(table(ej_1$moneda))
+prop.table(table(ej_1$moneda, ej_1$sol), 1)
+```
+
+Si parametrizamos con $\theta=P(moneda=A)$, $\theta_A=P(sol|moneda=A)$ y
+ $\theta_B=P(sol|moneda=B)$, estos tres parámetros on
+
+```{r}
+prop.table(table(ej_1$moneda))[1]
+prop.table(table(ej_1$moneda, ej_1$sol), 1)[, 2]
+```
+
+Sin embargo, la estimación cambia considerablemente si consideramos las dos 
+posibilidades para moneda:
+
+```{r}
+ej_temp <- ej_1
+ej_temp[6, 'moneda'] <- 'A'
+prop.table(table(ej_temp$moneda))
+prop.table(table(ej_temp$moneda, ej_temp$sol), 1)
+
+ej_temp <- ej_1
+ej_temp[6, 'moneda'] <- 'B'
+prop.table(table(ej_temp$moneda))
+prop.table(table(ej_temp$moneda, ej_temp$sol), 1)
+```
+
+No está claro entonces que sea buena idea eliminar el caso faltante.
+¿Cómo adaptamos la verosimilitud para lidiar con este caso?
+
+En primer lugar, obsérvese que la parte que corresponde a la log verosimilitud 
+para los datos completos (caso 1 a 5) es
+$$\log (\theta\theta_A) + \log(\theta(1-\theta_A)) + 2\log((1-\theta)(1-\theta_B))+
+\log((1-\theta)\theta_B)$$
+Que es igual a
+$$2\log\theta+3\log(1-\theta)+\log\theta_A+\log(1-\theta_A)+2\log(1-\theta_B)+\log\theta_B$$
+
+Verificamos nuestro resultado anterior optimizando directamente (escogimos una
+parametrización no tan buena. Es mejor usar logits):
+
+```{r, warning=FALSE}
+logLik <- function(theta){
+  2 * log(theta[1]) + 3 * log(1 - theta[1]) + log(theta[2]) + log(1 - theta[2]) +
+    log(theta[3]) + 2 * log(1 - theta[3]) 
+}
+optim_1 <- optim(c(0.1, 0.1, 0.5), logLik, control = list(fnscale = -1))
+optim_1$convergence
+optim_1$par
+```
+
+Y notamos que, en efecto, son iguales a los que habíamos calculado directamente
+con conteos. 
+
+Ahora incluiremos a la log verosimilitud un término adicional de la contribución 
+del último caso.
+
+¿Qué sabemos del último caso? Sabemos que $x^{6}_{sol}=0$, y el valor de 
+$x^{6}_{moneda}$ fue censurado. Consideramos entonces el término (que es una 
+variable aleatoria):
+$$p_{\theta}(x^{6}_{sol}=0 , r^{6}_{moneda}=1, x^6_{moneda}),$$
+donde $r^{6}_{moneda}$ es una variable indicadora de casos faltante.
+
+El primer punto importante es que hay que _hacer algún supuesto probabilístico
+acerca del mecanismo de censura para poder resolver nuestro problema
+por máxima verosimilitud_.
+
+Para calcular esta cantidad, reescribimos como
+
+$$p_{\theta}(x^{6}_{sol}=0, x^6_{moneda})p(r^{6}_{moneda}=1|x^{6}_{sol}=0, x^6_{moneda})$$
+Con el modelo podemos marginalizar el primer término, pero no podemos 
+marginalizar porque tiene el segundo término.
+
+Podríamos simplificar suponiendo que el segundo término no depende
+de $\theta$, y adicionalmente, que 
+$$p(r^{6}_{moneda}=1|x^{6}_{sol}=0, x^6_{moneda})=p(r^{6}_{moneda}=1|x^{6}_{sol}=0).$$
+Es decir, el valor censurado de la moneda no cambia la probabilidad de censura. 
+Esto ayuda porque entonces porque podemos marginalizar el producto con el 
+modelo, obteniendo
+
+$$K\sum_x p_{\theta}(x^{6}_{sol}=0, x^6_{moneda}=x)$$
+
+donde $K$ es una constante que no depende de $\theta$, y podemos ignorar
+para hacer máxima verosimilitud.
+
+Para usar nuestra parametrización local escribimos entonces:
+$$p_{\theta}(x^{6}_{sol}=0 )=p_{\theta}(x^{6}_{sol}=0 |x^{6}_{moneda}=A)
+p_{\theta}(x^{6}_{moneda}=A) +  p_{\theta}(x^{6}_{sol}=0 |x^{6}_{moneda}=B)
+p_{\theta}(x^{6}_{moneda}=B),  $$
+que en términos de $\theta$ se escribe como
+$$(1-\theta_A)\theta + (1-\theta_B)(1-\theta)$$
+y ahora podemos entonces maximizar
+$$2\log\theta+3\log(1-\theta)+\log\theta_A+\log(1-\theta_A)+2\log(1-\theta_B)+\log\theta_B + \log((1-\theta_A)\theta + (1-\theta_B)(1-\theta)).$$
+
+Nótese que este problema es más difícil que el de datos
+completos, pues la verosimilitud ya no es separable en modelos locales. Podemos
+resolver numéricamente:
+
+
+```{r}
+logLikFaltantes <- function(theta){
+  logLik(theta) + log((1 - theta[2]) * theta[1] + (1 - theta[3]) * (1 - theta[1]))
+}
+optim_2 <- optim(c(0.1, 0.1, 0.5), logLikFaltantes, control = list(fnscale = -1))
+optim_2$convergence
+optim_2$par
+```
+
+Nótese en primer lugar que las condicionales de sol bajaron: esto es porque
+observamos un 0 adicional en la variable _sol_. Bajan las dos
+pues no sabemos qué moneda se utilizó. En segundo lugar, bajó un poco la
+probabilidad de moneda A, y esto es porque los ceros están más fuertemente 
+asociados con la moneda B, de forma que es más probable que la moneda utilizada
+haya sido la B, pues observamos una águila en el caso faltante.
+
+Si calculamos la marginal de águilas y soles vemos otra verificación de
+que estamos usando todos los datos:
+
+```{r}
+optim_2$par[2] * optim_2$par[1] + optim_2$par[3] * (1 - optim_2$par[1])
+```
+
+y esto es pues en la columna de soles hay 1/3 de soles. Por otra parte:
+
+```{r}
+optim_1$par[2]*optim_1$par[1]+optim_1$par[3]*(1-optim_1$par[1])
+```
+
+
+Del ejemplo anterior, obtenemos las siguientes observaciones:
+
+<div class="caja">
+Para aplicar máxima verosimilitud en presencia de datos faltantes, necesitamos:
+
+* Además del modelo de los datos, necesitamos un modelo probabilístico para la
+aparición de faltantes en los datos.
+
+* Supuestos acerca del modelo de datos faltantes que simplifique el
+análisis.
+
+* Resolver el problema de máxima verosimilitud con datos faltantes, que 
+típicamente es más difícil que el problema correspondiente a datos completos.
+</div>
+
+Abajo introducimos algunas ideas y notación para generalizar los primeros dos 
+puntos. La idea principal es modelar el proceso que censura datos de manera 
+probabilística, hacer supuestos razonables para este proceso, e incluirlo en 
+nuestro proceso de estimación.
+
+En primer lugar, el modelo para los datos completos está parametrizado con 
+$\theta$:
+$$p_{\theta}(y)$$
+
+El proceso de censura lo incluimos de la siguiente forma: tenemos un vector $I$ 
+de indicadores de faltantes ($I_{j}=1$ cuando el dato $j$  está censurado 
+faltante), y el modelo para el mecanismo de faltantes está parametrizado con 
+$\psi$ y está dado por:
+$$p_{\psi} (I|y)$$
+
+Entonces generamos los datos según $p_{\theta}(y)$ y luego censuramos 
+observaciones según $p_{\psi} (I|y)$. Los datos que
+obtenemos son los valores no censurados, junto con la indicadora de qué
+valores fueron censurados. Así, el modelo completo para nuestras observaciones 
+es:
+$$p_{\theta,\psi} (y,I)=p_{\theta}(y)p_{\psi}(I|y).$$
+
+Finalmente, escribiremos
+$$y=(y_{obs},y_{falta})$$
+para denotar por separado datos observados y datos faltantes.
+
+**Ejemplo.** Consideramos el ejemplo de la moneda. El proceso para generar 
+las observaciones está dado por:
+
+* $\theta=0.5$ (probabilidad de seleccionar moneda A), y los parámetros 
+$\theta_A=0.5$, $\theta_B=0.33$, que dan las probabilidades de sol para cada 
+moneda (modelo de datos)
+
+* Cuando observamos un sol, tenemos probabilidad de 0.1 de  "perder" el registro 
+de qué moneda se usó. Cuando usamos cualquiera de las dos monedas, no hacemos el 
+volado con probabilidad 0.20 (modelo de censura).
+
+Generamos ahora algunas observaciones de este modelo (que suponemos iid). 
+
+```{r}
+set.seed(280572)
+N <- 1000
+moneda <- sample(c('A', 'B'), N, replace = T)
+sol <- rbinom(N, 1, ifelse(moneda=='A', 0.5, 0.33))
+datos_L <- data.frame(moneda, sol)
+head(datos_L, 30)
+```
+
+y ahora censuramos según el modelo de censura:
+
+```{r}
+censura_moneda <- rbinom(N,1, ifelse(sol == 1, 0.3, 0))
+censura_sol <- rbinom(N, 1, 0.2)
+```
+
+Y obtenemos las observaciones:
+
+```{r}
+datos_L_obs <- datos_L
+datos_L_obs[censura_moneda == 1, 'moneda'] <- NA
+datos_L_obs[censura_sol == 1, 'sol'] <- NA
+head(datos_L_obs, 30)
+```
+
+La verosimilitud para nuestros datos observados está dada  por
+$$p(y_{obs},I),$$
+pues sabemos los valores de las variables observadas y qué datos faltan.
+Para hacer máxima verosimilitud tenemos entonces que encontrar esta conjunta. 
+Esto lo hacemos promediando (marginalizando) sobre $y_{falta}$ (que consideramos 
+como variables aleatorias) :
+
+$$p_{\theta,\phi} (y_{obs},I)=\int p_{\phi}(I|y_{obs},y_{falta})p_{\theta} (y_{obs}, y_{falta})d y_{falta}.$$
+
+Nótese que esta integral (o suma, dependiendo del caso), promedia los valores 
+faltantes según el modelo de los datos $p_{\theta}$
+
+De la ecuación de arriba, vemos que en general tendríamos que modelar también el
+mecanismo de datos faltantes y estimar todos los parámetros. Esto es difícil no
+solamente porque hay más parámetros, sino porque en la práctica _puede ser 
+difícil proponer un modelo razonable para datos faltantes_. En este punto, 
+preferimos hacer un supuesto (que puede cumplirse o no para cada problema 
+particular), y obtener una solución.
+
+## Mecanismos de faltantes 
+
+A continuación consideramos cuatro mecanismos que dan lugar a datos faltantes.
+Para dar un ejemplo de cada caso, consideramos el escenario de una encuesta 
+donde se pregunta el ingreso del hogar.
+
+
+<div class="caja">
+
+* Decimos que el mecanismo de censura es __MCAR (missing completely at random, o
+faltante totalmente al azar)__ cuando se cumple
+$$p_{\phi}(I|y_{obs},y_{falta})=p_{\phi}(I). $$
+Esto es, una variable es MCAR si la probabilidad de faltar es la misma para todas
+las unidades. Por ejemplo, si todos los encuestados deciden si contestar la
+pregunta de _ingresos_ lanzando un dado y negansdose a contestar si observa un 6. 
+En el caso MCAR eliminar las observaciones con faltantes no genera un 
+sesgo en la inferencia.
+
+* Decimos que el mecanismo de censura es __MAR (missing at random o faltante
+al azar)__ cuando
+$$p_{\phi}(I|y_{obs},y_{falta})=p_{\phi}(I|y_{obs}), $$
+es decir, la probabilidad de censura de una una variable dada no depende
+de los valores que toma esa variable, pero puede depender de otros datos 
+observados. En la mayor parte de los casos los faltantes no cumplen MCAR. Por 
+ejemplo, la tasa de no respuesta suele diferir entre blancos y negros, esto es
+un indicador de que la pregunta _ingresos_ no cumple los supuestos de MCAR.  
+El supuesto de MAR es más general, por ejemplo si observamos _genero_, _raza_,
+_educación_ y _edad_ para todos los encuestados, enotnces _ingresos_ es MAR si 
+la porbabilidad de no-respuesta para esta pregunta depende únicamente de estas
+variables completamente observada.
+
+
+* En otro caso, decimos que el mecanismo de censura es __MNAR (missing not at 
+random).__  Notemos que faltantes dejan 
+de ser aleatorios cuando dependen de información que no se colectó. Por ejemplo, 
+es común que en ensayos clínicos si un tratamiento particular causa molestias 
+los pacinetes son más propensos a abandonar el estudio, y dado que se busca 
+medir la eficacia de cada tratamiento tenemos faltantes no aleatorios. Otro
+caso de falatantes no aleatorios es cuando la probabilidad de que cierta 
+variable falte depende de la variable misma. Por ejemplo, supongamos que la
+gente con mayor ingreso es menos propensa a revelarlo. El caso extremo (por 
+ejemplo, todas las personas con ganancia mayor a $100,000 se rehusan a 
+contestar) se conoce como censura. Cuando tenemos MNAR es necesario modelar 
+el mecanismo de datos faltantes, o aceptar que nuestros resultados serán 
+sesgados.
+</div>
+
+
+**Ejemplo.** En nuestro ejemplo de las monedas, los faltantes de soles son MCAR, 
+mientras que los faltantes de monedas son sólo MAR, pues la probabilidad de
+censura cambia 
+con el valor del volado. Los procesos de censura de cada variable son 
+independientes, así que estos datos son MAR.
+
+Más adelante discutimos estos supuestos. Nótese que si se cumple MAR, entonces
+tenemos que
+$$p_{\theta,\psi} (y_{obs},I)= p_{\psi}(I|y_{obs})\int p_{\theta} (y_{obs}, y_{falta})dy_{falta}.$$
+
+Lo interesante de esta expresión es que los parámetros $\psi$ y $\theta$ están en factores separados.
+Esto implica que para maximizar el lado izquierdo, hay que maximizar por separado
+los dos factores. Más interesante es que para encontrar los estimadores
+de máxima verosimilitud, **no es necesario trabajar con $\psi$ ni el mecanismo 
+al azar. Esto es, el mecanismo de faltantes es ignorable.** En otras
+palabras, 
+
+<div class="caja">
+Si el mecanismo de censura es MAR, podemos maximizar verosimilitud simplemente
+maximizando la verosimilitud completa donde los valores censurados están 
+integrados respecto a la condicional de modelo de los datos. **El cumplimiento
+de MAR depende del fenómeno que produce los datos y del modelo que estamos 
+usando**.
+</div>
+
+**Ejemplo**. Ahora podemos escribir la función de log verosimilitud para nuestro
+problema de arriba. Para una observación en particular, tenemos:
+
+* Si tenemos el valor de sol=1, y la moneda está censurada, entonces 
+marginalizando (no es integral en este caso, es una suma):
+$$p_\theta(sol=1)=\theta\theta_A + \theta\theta_B,$$
+y 
+$$p_\theta(sol=0)=\theta(1-\theta_A) + \theta(1-\theta_B),$$
+
+* Si tenemos el valor de moneda y el sol está censurado, entonces la 
+probabilidad de la observación es $\theta$ (moneda A) o $1-\theta$ (moneda B).
+
+* Si ambos valores están censarados, entonces el caso contribuye 0 a la log 
+verosimilitud.
+
+```{r}
+logLikObs <- function(moneda, sol, theta){
+  salida <- 1
+  if(is.na(moneda) & !is.na(sol)){
+    salida <- (theta[1] * (sol * theta[2] + (1 - sol) * theta[2]) +
+        (1 - theta[1]) * (sol * theta[3] + (1 - sol) * theta[3]))
+  }
+  if(is.na(sol) & !is.na(moneda)){
+    salida <- ((moneda == 'A') * theta[1] + (moneda == 'B') * (1 - theta[1]))
+  }
+  if(!is.na(sol) & !is.na(moneda)){
+    parte_1 <- (theta[1] * (moneda == 'A') + (1 - theta[1]) * (moneda == 'B'))
+    parte_2 <- (ifelse(moneda == 'A', sol * theta[2] + 
+        (1 - sol) * (1 - theta[2]), sol * theta[3] + 
+        (1 - sol) * (1 - theta[3])))
+    salida <- parte_1 * parte_2
+  }
+  log(salida)
+}
+logData <- function(datos){
+  function(theta){
+    suma <- sapply(1:nrow(datos), function(i){
+      logLikObs(moneda = datos[i, 'moneda'], sol = datos[i, 'sol'], theta)
+    })
+    sum(suma)
+  }
+}
+func_1 <- logData(datos_L_obs)
+optim(c(0.5, 0.6, 0.3), func_1, control = list(fnscale = -1))
+```
+
+Comparamos con el caso en que eliminamos faltantes y hacemos conteos:
+
+```{r}
+prop.table(table(datos_L_obs$moneda))
+prop.table(table(datos_L_obs$moneda, datos_L_obs$sol), margin=1)
+```
+
+En R, el paquete [catnet](http://cran.r-project.org/web/packages/catnet/vignettes/catnet.pdf)
+permite el aprendizaje y estimación de redes con 
+datos faltantes.
+
+**Ejemplo:** MAR, MCAR, MNAR. Consideramos los siguientes datos completos, donde 
+cada renglón representa a un empleado, IQ es una medición que se le hizo al 
+empleado cuando fue contratado, y performance es una evaluación de desempeño
+a 6 meses de su contratación. Los datos completos están dados por la tercera 
+columna (_performance_).
+
+```{r}
+datos_cens <- read.csv(file = 'data/ejemplos_censurados.csv')
+datos_cens[, c('IQ', 'performance')]
+```
+
+Ahora consideramos tres escenarios que podrían resultar en datos faltantes de la
+variable _performance_:
+
+1. En un accidente, los archivos de desempeño de empleados cuyo apellido que 
+comienza con las letras A-C se pierden.
+
+2. Los empleados con medidas más bajas de IQ de no se contratan, así que no se 
+observa su desempeño.
+
+3. Los empleados con peor desempeño (apreciativo, que correlaciona con la 
+evaluación formal) son despedidos antes de los 6 meses de la evaluación de 
+desempeño formal.
+
+Podríamos obtener datos como sigue:
+
+```{r}
+datos_cens
+```
+
+Consideramos cómo es el mecanismo de censura para la variable _performance_ bajo 
+los distintos escenarios:
+
+1. MCAR: En el primer escenario, la letra del primer apellido no
+correlaciona con IQ o performance. Los faltantes de performance
+tienen una probabilidad fija de ocurrir, que no depende de ninguna otra
+variable. Este es el caso de la columna peformance.MCAR.
+
+2. MAR: En el segundo escenario, la aparición de performance depende del IQ, que
+siempre es observado. Pero una vez que condicionamos a IQ, no está relacionada 
+con los valores que toma performance.MAR.
+
+3. MNAR En el último caso, los faltantes de performance.MNAR dependen tanto de
+performance y de IQ. Este es el caso MNAR.
+
+Los datos se ven como sigue en cada caso:
+
+```{r, fig.width=8.5, fig.height=4.5, warning=FALSE, message=FALSE, fig.show='hold'}
+library(plyr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+datos_cens_l <- datos_cens %>%
+  gather(type_miss, value, performance.MCAR:performance.MNAR)
+
+ggplot(datos_cens_l, aes(x = IQ, y = performance)) +
+  geom_point(colour = "red", size = 1.5) +
+  geom_point(aes(x = IQ, y = value, group = type_miss), size = 1.5) +
+  geom_smooth(aes(x = IQ, y = value, group = type_miss), color = "black", 
+    method = "lm", se = TRUE) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  facet_wrap(~ type_miss) +
+  labs(title = "Mecanismos de datos faltantes")
+
+datos_cens %>%
+  gather(type_miss, value, performance:performance.MNAR) %>%
+  group_by(type_miss) %>%
+  summarise(
+    media = mean(value, na.rm = TRUE),
+    se = sd(value, na.rm = TRUE)
+    )
+```
+
+De las figuras de arriba notemos que en MCAR podemos eliminar datos (aunque no  
+sea lo más eficiente) sin producir sesgos en la estimación condicional de 
+_performance_ dado _IQ_.
+
+Bajo MAR, eliminar casos faltantes produce sesgos en la estimación
+de la media y varianza, y posiblemente atenúa la correlación (al eliminar
+observaciones de una cola).
+
+Finalmente, bajo MNAR, eliminar casos faltantes produce sesgos
+en estimación de media, varianza y los coeficientes de regresión:
+
+### Métodos usuales de imputación
+
+<div class="caja">
+En un proceso de imputación, buscamos imputar datos faltantes de
+manera que podamos usar métodos de datos completos. Esta imputación
+funciona bien cuando no altera de manera considerable las características
+distribucionales de los datos.
+</div>
+
+A continuación usamos el ejemplo para mostrar algunos métodos de imputación.
+
+**Media.** Podemos hacer imputación con la media, que en este 
+caso distorsiona la relación entre IQ y performance (_jalándola_ hacia cero).
+También afecta la estimación de la media de performance y deriva en subestimar 
+el error estándar de la variable.
+
+```{r, fig.width = 5, fig.height = 4, fig.align='center'}
+datos_cens$performance_imp_media <- datos_cens$performance.MAR
+datos_cens$performance_imp_media[is.na(datos_cens$performance.MAR)] <- 
+  mean(datos_cens$performance.MAR, na.rm = T)
+# Media y desviación estándar
+c(mean(datos_cens$performance_imp_media), sd(datos_cens$performance_imp_media))
+
+
+ggplot(datos_cens, aes(x = IQ, y = performance)) + 
+  geom_point(color = "red", size = 1.5) +
+  geom_point(aes(y = performance_imp_media, color = is.na(performance.MAR)),
+             size = 1.5) +
+  scale_color_manual(name = "Imputados", values = c("darkgray", "purple")) +
+  geom_smooth(aes(y = performance_imp_media), method ='lm', se = FALSE, 
+    color = "darkgray")+
+  geom_smooth(aes(y = performance), colour = 'red', se = FALSE, method ='lm')
+```
+
+**Regresión.** Otro enfoque es imputación simple con regresión: ajustamos un modelo de performance vs IQ, e imputamos con las predicciones del modelo:
+
+```{r, fig.width = 5, fig.height = 4, fig.align='center', message=FALSE, warning=FALSE}
+library(arm)
+datos_cens$performance_imp_lm <- datos_cens$performance.MAR
+mod_1 <- lm(performance.MAR ~ IQ, data = datos_cens)
+display(mod_1)
+datos_cens$performance_imp_lm[is.na(datos_cens$performance.MAR)] <- 
+  predict(mod_1, newdata = subset(datos_cens, is.na(performance.MAR)))
+
+# Media y desviación estándar
+c(mean(datos_cens$performance_imp_lm), sd(datos_cens$performance_imp_lm))
+
+ggplot(datos_cens, aes(x = IQ, y = performance)) + 
+  geom_point(color = "red", size = 1.5) +
+  geom_point(aes(y = performance_imp_lm, color = is.na(performance.MAR)),
+             size = 1.5) +
+  scale_color_manual(name = "Imputados", values = c("darkgray", "purple")) +
+  geom_smooth(aes(y = performance_imp_lm), method ='lm', se = FALSE, 
+    color = "darkgray")+
+  geom_smooth(aes(y = performance), colour = 'red', se = FALSE, method ='lm')
+```
+
+En este caso, agregamos observaciones que tienen correlación perfecta, notemos
+que $R^2=0.24$ lo que quiere decir que la varianza explicada en la regresión
+es únicamente el $0.24%$ de la varianza total, por tanto los valores de 
+predicción tienden a ser menos variables que los datos originales.
+
+**Estocástica con regresión**. Podemos _regresar_ la incertidumbre a las 
+imputaciones sumando el error de predicción. La idea es simular observaciones
+bajo el modelo:
+
+```{r, fig.width = 5, fig.height = 4, fig.align='center', message=FALSE, warning=FALSE}
+datos_cens$performance_imp_st <- datos_cens$performance.MAR
+pred_1 <- predict(mod_1, newdata = subset(datos_cens, is.na(performance.MAR)))
+display(mod_1)
+datos_cens$performance_imp_st[is.na(datos_cens$performance.MAR)] <- pred_1 +
+  rnorm(sum(is.na(datos_cens$performance.MAR)), 0, sd = 2.39)
+
+ggplot(datos_cens, aes(x = IQ, y = performance)) + 
+  geom_point(color = "red", size = 1.5) +
+  geom_point(aes(y = performance_imp_st, color = is.na(performance.MAR)),
+             size = 1.5) +
+  scale_color_manual(name = "Imputados", values = c("darkgray", "purple")) +
+  geom_smooth(aes(y = performance_imp_st), method ='lm', se = FALSE, 
+    color = "darkgray")+
+  geom_smooth(aes(y = performance), colour = 'red', se = FALSE, method ='lm')
+```
+
+Nótese que nuestro proceso produce conjuntos de datos más similares a los datos originales. En el ejemplo siguiente, hacemos cinco imputaciones estocásticas
+y comparamos con los datos completos:
+
+```{r, fig.width = 5, fig.height = 4, fig.align='center', message=FALSE, warning=FALSE}
+repImp <- function(rep){
+  originales <- datos_cens$performance.MAR
+  num_faltantes <- sum(is.na(originales))
+  faltantes_imp <- pred_1 + rnorm(num_faltantes, 0, sd = 2.39)
+  originales[is.na(originales)] <- faltantes_imp
+  data.frame(performance = originales, IQ = datos_cens$IQ)
+}
+imp_rep <- rdply(5, repImp)
+
+orig_1 <- dplyr::select(datos_cens, IQ, performance) %>%
+  mutate(.n = 'completos')
+
+ggplot(imp_rep, aes(x = IQ, y = performance, group = .n)) + 
+  geom_smooth(se=FALSE, method = "lm", color = "darkgray") +
+  geom_point(data = orig_1, colour='red', size = 1.5, 
+    aes(x = IQ, y = performance)) +
+  geom_smooth(data = orig_1, colour='red', method = "lm", se = FALSE, 
+    aes(x = IQ, y = performance))
+```
+
+![](img/manicule2.jpg) Repite la imputación estocástica
+para los faltantes MCAR y MNAR.
+
+En la siguiente tabla consideramos un ejercicio de simulación, 
+donde se hicieron distintas imputaciones para cada proceso de censura.
+En esta tabla vemos que en caso MAR, el único método insesgado es
+imputación estocástica con regresión. Todos los demás métodos introducen sesgos.
+Por otra parte, ningún método funciona bien para MNAR.
+
+![](img/simulacion_imp.png)
+
+<div class="caja">
+Para imputación bajo MAR, usamos métodos estocásticos basados
+en modelos para la variable que queremos imputar en términos de otras observadas. Es importante incluir todas las variables que influyen en la censura o no respuesta.
+
+Típicamente hacemos unas pocas replicaciones (por ejemplo 5) de la imputación,
+y verificamos los resultados de nuestro análisis a lo largo de las 5 imputaciones distintas.
+</div>
+
+### Verificación de MAR
+Como discutimos antes, los faltantes al azar son más fáciles de manejar; sin 
+embargo, en general no podemos estar seguros de que los faltantes dependen de 
+predictores no observados o de las variables mismas en que observamos los 
+faltantes. En general debemos realizar supuestos, o revisar estudios similares. 
+En la práctica se intenta incluir los más predictores posibles de tal manera que 
+que el supuesto de MAR sea razonable. Por ejemplo, puede ser un supuesto muy 
+fuerte decir que la no respuesta a la pregunta de _ingresos_ depende únicamente
+de género, raza y educación, pero es mucho más razonable que suponer que la 
+probabilidad de no respuesta es constante o que depende únicamente de uno de los
+predictores propuestos.
+
+<div class="caja">
+* No es posible hacer pruebas para confirmar MAR en lugar de MNAR. La razón
+es precisamente que los datos que necesitamos para ver la posibilidad de MNAR están censurados.
+
+* El enfoque tanto de máxima verosimilitud como de imputación consiste en 
+incluir suficientes variables en el modelo, _todas observadas_, de manera que 
+estas variables expliquen las probabilidades de censura, y así la probabilidad 
+de faltantes no dependa de la variable de interés.
+
+* El caso MNAR es más difícil, pues en este caso típicamente el mecanismo de 
+censura no es ignorable: tenemos que modelarlo. Esto es más complicado 
+técnicamente y generalmente no tenemos información razonable para construir 
+estos modelos.
+</div>
+
+
+## Métodos de imputación para varias variables
+
+En esta sección explicaremos la imputación para el caso de faltantes en varias
+variables y la implementación de imputación del paquete mi, para esto utilizamos
+el ejemplo del artículo [Multiple Imputation with Diagnostics (mi) in R](http://www.jstatsoft.org/v45/i02/paper) de Yu-sUng Su et al.
+
+* Imputación multivariada. Un método de imputación directo es ajustar un modelo
+multivariado a todas las variables con datos faltantes. La dificultad de este
+método es que requiere mucho esfuerzo llegar a un modelo razonable de regresión 
+multivariado, es por ello que en la práctica se suelen usar modelos _estándar_
+como el normal multivariado o una distribución multinomial para datos discretos.
+Las calidad de estas imputaciones depende del modelo por lo que se necesitan
+evaluar el ajuste del mismo; sin embargo, es común que la implementación sea
+una caja negra.
+
+* Imputación iterativa. Una manera de generalizar los métodos univariados 
+(cuando solo tengo faltantes en una variable) es aplicarlos iterativamente. Si
+las variables con datos faltantes son una matriz $Y=(Y_1,...,Y_K)$ y las
+variables completamente observadas son X, comenzamos imputando todos los 
+valores de $Y$ (por ejemplo, seleccionando de los datos observados al azar para
+cada faltante), y después imputar $Y_1$ dado $Y_2,...,Y_K$ y $X$, imputar $Y_2$
+dado $Y_1,Y_3,...,Y_K$ y $X$ donde sustituimos por los valores recien imputados
+para $Y_1$ y procedemos de esta manera: imputando con procedimientos al azar hasta alcanzar algún criterio de convergencia. 
+
+**Ejemplo.** Veamos un ejemplo proveniente de la encuesta de indicadores 
+sociales de Nueva York.
+
+```{r, eval=FALSE}
+wave3 <- read.table("data/sis.csv", header = T, sep = ",")
+
+# No lo hagan!
+attach(wave3)
+n <- nrow(wave3)
+
+ # missing codes:  -9: refused/dk to say if you have this source
+ #                 -5: you said you had it but refused/dk the amount
+
+ # Variables:
+
+ # rearn:  respondent's earnings
+ # tearn:  spouse's earnings 
+ # ssi:  ssi for entire family
+ # welfare:  public assistance for entire family
+ # charity:  income received from charity for entire family
+ # sex:  male=1, female=2
+ # race of respondent:  1=white, 2=black, 3=hispanic(nonblack), 4=other
+ # immig:  0 if respondent is U.S. citizen, 1 if not
+ # educ_r:  respondent's education (1=no hs, 2=hs, 3=some coll, 4=college grad)
+ # DON'T USE primary:  -9=missing, 0=spouse, 1=respondent is primary earner  
+ # workmos:  primary earner's months worked last year
+ # workhrs:  primary earner's hours/week worked last year
+
+# Creamos algunas variables
+white <- ifelse(race == 1, 1, 0)
+white[is.na(race)] <- 0
+male <- ifelse(sex == 1, 1, 0)
+over65 <- ifelse (r_age > 65, 1, 0)
+immig[is.na(immig)] <- 0
+educ_r[is.na(educ_r)] <- 2.5
+
+# Funciones auxiliares
+# Codificar NAs
+na.fix <- function(a){
+  ifelse (a<0 | a==999999, NA, a)
+}
+
+is.any <- function (a) {
+  any.a <- ifelse(a>0, 1, 0)
+  any.a[is.na(a)] <- 0
+  return(any.a)
+}
+
+earnings <- na.fix(rearn) + na.fix(tearn)
+earnings[workmos==0] <- 0
+
+ # variables resumen para distintos ingresos
+any.ssi <- is.any(ssi)
+any.welfare <- is.any(welfare)
+any.charity <- is.any(charity)
+
+earnings <- earnings/1000
+
+## Imputación aleatoria simple
+random.imp <- function (a){
+  missing <- is.na(a)
+  n.missing <- sum(missing)
+  a.obs <- a[!missing]
+  imputed <- a
+  imputed[missing] <- sample (a.obs, n.missing, replace=TRUE)
+  return (imputed)
+}
+
+earnings.imp <- random.imp(earnings)
+
+## Zero coding and topcoding
+# Topcoding reduce la sensibilidad del los resultados a los valores más altos
+# zero coding se utiliza para ajustar el modelo de regresión únicamente a
+# aquellas personas con ingreso positivo
+
+topcode <- function (a, top){
+  return (ifelse (a>top, top, a))
+}
+
+earnings.top <- topcode(earnings, 100)
+workhrs.top <- topcode(workhrs, 40)
+
+## Descrpción
+
+ # interest:  interest of entire family
+interest <- na.fix(interest)
+
+ # transforming the different sources of income
+interest <- interest/1000
+
+## Simple random imputation
+interest.imp <- random.imp (interest)
+
+## Imputación iterativa
+datos <- data.frame(earnings, interest.imp, male, over65, white, immig,
+    educ_r, workmos, workhrs.top, any.ssi, any.welfare, any.charity)
+str(datos)
+
+impute <- function(a, a.impute){
+   ifelse(is.na(a), a.impute, a)
+}
+
+# número de iteraciones
+n.sims <- 10
+# Y: earnings, interest
+for (s in 1:n.sims){
+  lm.1 <- lm (earnings ~ interest.imp + male + over65 + white + immig +
+    educ_r + workmos + workhrs.top + any.ssi + any.welfare + any.charity)
+  pred.1 <- rnorm(n, predict(lm.1), sigma.hat(lm.1))
+  earnings.imp <- impute (earnings, pred.1)
+
+  lm.2 <- lm (interest ~ earnings.imp + male + over65 + white + immig + 
+    educ_r + workmos + workhrs.top + any.ssi + any.welfare + any.charity)
+  pred.2 <- rnorm(n, predict(lm.2), sigma.hat(lm.2))
+  interest.imp <- impute(interest, pred.2)
+}
+
+```
+
+Ahora veamos como realizar una imputación usando el paquete _mi_. Este
+paquete describe la imputación de datos como un proceso que consta de 4 pasos.
+
+1. Preparación
+
+* Visualización de patrones de datos faltantes.
+
+* Identificación de problemas estructurales en los datos y preprocesamiento de 
+los mismos.
+
+2. Imputación
+
+* Imputación iterativa con base al modelo condicional.
+
+* Revisón del ajuste de los modelos condicionales con el fin de observar si 
+los valores imputados son razonables.
+
+* Revisión de convergencia del procedimiento.
+
+3. Análisis
+
+* Obtención de datos completos.
+
+* Combinación (_pooling_) del análisis de datos completos en múltiples conjuntos
+de datos imputados.
+
+4. Validación
+
+* Análisis de sensibilidad.
+
+* Validación cruzada. 
+
+* Revisión de compatibilidad
+
+
+### Ejemplo: Ecuesta de jóvenes de EUA
+Seguiremos el ejemplo de la documentación del paquete `mi` y explicaremos los 
+pasos de la imputación. Los datos consisten en un extracto (no longitudinal) de 
+la [enucesta nacional de joventud de EUA](https://www.bls.gov/nls/nlsy97.htm).
+
+#### 1. Preparación {-}
+
+Comencemos con la visualización de patrones en los datos faltantes. Los patrones
+de datos faltantes se refieren a la configuración de datos observados y 
+faltantes de una base de datos.
+
+La gráfica del lado izquierdo muestra la matriz con los datos observados y los 
+faltantes. Esta gráfica puede ser difícil de interpretar, es por ello
+que en la figura del lado derecho ordenamos y creamos conglomerados con los
+datos, para la visualización usamos el paquete `visdat`.
+
+```{r, fig.height = 4.5, fig.width = 8.5, message=FALSE}
+library(mi)
+library(visdat)
+library(gridExtra)
+data(nlsyV)
+
+par(mfrow = c(1,2))
+vis <- vis_miss(nlsyV)
+vis_clust <- vis_miss(nlsyV, cluster = TRUE, sort_miss = TRUE)
+grid.arrange(vis, vis_clust, ncol = 2)
+```
+
+Lo que sigue es usar la instrucción `missing_data.frame` para crear una clase 
+similar a `data.frame` con información que especifica el tipo de dato y de 
+modelo de imputación que se usará. 
+
+```{r}
+mdf <- missing_data.frame(nlsyV)
+show(mdf)
+```
+
+También podemos realizar cambios en `mdf` usando la función `change()`. 
+
+```{r}
+mdf <- change(mdf, y = c("income", "momrace"), what = "type", 
+  to = c("non", "un"))
+```
+
+#### 2. Imputación {-}
+
+Una vez que preparamos todo, la imputación es sencilla; sin embargo, se debe
+verificar el ajuste de los modelos y la convergencia.
+
+```{r}
+imp <- mi(mdf, n.iter = 20, n.chains = 4, verbose = FALSE)
+show(imp)
+```
+
+Si el ajuste de los modelos de imputación es malo es poco probable que 
+imputemos valores razonables. Podemos revisar el ajuste usando las siguientes 
+gráficas que regresa la función `plot()`, para las primeras tres cadenas 
+tenemos:
+
+1. Histogramas de los observados (azúl) e imputados (rojo). 
+
+2. Un diagrama de dispersión que grafica los valores observados contra los 
+valores depredicción, además se agrega una curva loess.
+
+3. _Binned residuals_ que grafica el promedio de los residuales, en bins, contra 
+los valores esperados.
+
+```{r, fig.height = 7, fig.width=7}
+plot(imp)
+```
+
+Las gráficas también  nos pueden ayudar a detectar si no se cumple el 
+supuesto MAR, pues podemos comparar los valores observados y los valores
+imputados.
+
+Notemos que el gráfico de _binned residuals_ muestra que se puede mejorar el 
+modelo de imputación para *income* pues hay muchos
+residuales que caen por fuera de las bandas de 95\% de error.
+
+En cuanto a convergencia `mi` calcula la media y desviación estándar de cada
+variable en distintas cadenas, queremos que la media de cada variable coincida
+a lo largo de las cadenas.
+
+```{r}
+round(mipply(imp, mean, to.matrix = TRUE), 3)
+```
+
+Más aún tenemos una medida de convergencia, se considera que la imputación ha 
+convergido si $\hat{R} < 1.1$ para todos los parámetros.
+
+```{r}
+Rhats(imp)
+```
+
+Si no se ha logrado convergencia podemos continuar las iteraciones sobre el
+objeto mi anterior:
+
+```{r}
+imp <- mi(imp, n.iter = 50, verbose = FALSE)
+Rhats(imp)
+```
+
+
+#### 3. Combinación de inferencias (Rubin 1987) {-}
+
+En el proceso anterior realizamos 4 cadenas de imputaciones, esto es, tenemos 
+4 bases de datos con datos imputados. Podemos extraer las bases de datos con 
+los datos imputados para hacer análisis.
+
+```{r, cache=TRUE}
+dfs <- complete(imp, m = 4)
+```
+
+O podemos extraer únicamente uno.
+
+```{r, cache=TRUE}
+imp_dat <- complete(imp, m = 1)
+
+head(imp_dat)
+```
+
+Al hacer análisis, en lugar de reemplazar cada valor faltante con un valor
+imputado de manera aleatoria, tiene sentido reemplazar cada valor faltante con 
+varios valores imputados que reflejen nuestra incertidumbre acerca del modelo de 
+imputación. 
+
+Por ejemplo, si imputamos usando un modelo de regresión queremos reflejar no
+solamente la variación muestral (propia de imputación aleatoria), sino también
+la incertidumbre de los coeficientes de regresión del modelo. Si modelamos los
+coeficientes mismos, podemos obtener un nuevo conjunto de imputaciones
+para cada conjunto simulado de la distribución de coeficientes.
+
+Esta es la idea detrás de imputación multiple, se generean varios valores 
+imputados para cada valor faltante, cada uno es la predicción de un modelo
+ligeramente diferente y que además refleja variabilidad muestral. ¿Cómo 
+analizamos estos datos? La idea es usar cada conjunto de datos imputados (junto
+con los observados) para crear conjuntos de datos _completos_. Dentro de cada
+conjunto de datos completos podemos llevar a cabo un análisis estándar.
+
+Por ejemplo, supongamos que queremos hacer inferencia acerca de un coeficiente
+de regresión $\beta$, obtenemos estimaciones $\hat{\beta}_m$ usando cada uno 
+de los M conjuntos de datos, y obtenemos también errores estándar $s_1,...,s_M$.
+Para obtener una estimación puntual usamos la media de las $M$ estimaciones:
+$$\hat{\beta}=\frac{1}{M}\sum_{m}\hat{\beta}_m$$
+
+En cuanto al error estándar, no es tan sencillo como la media. Recordemos que 
+los errores estándar provenientes de imputaciones múltiples tienen dos fuentes
+de variación: el error estándar que hubiese resultado si los datos fueran 
+completos y el error muestral adicional proveniente de los datos faltantes. Es 
+así que las fórmulas de varianza consisten de un término correspondiente a
+variación dentro (_Within_) y otro entre (_Between_):
+
+$$V_{\beta} = W + (1+\frac{1}{M})B$$
+
+La varianza dentro es el promedio de las varianzas:
+
+$$W=\frac{1}{M}\sum_{m}s_m^2$$
+
+y estima la variabilidad que hubiera resultado si no hubiera datos faltantes.
+Por otra parte, como hemos discutido, los valores faltantes deben aumentar los 
+errores estándar, es así que surge el término de varianza _Between_.
+
+$$B=\frac{1}{M-1}\sum_{m}(\hat{\beta}_m-\hat{\beta})^2$$
+
+que representa la variación adicional debida a las fluctuaciones entre 
+$\hat{\beta}_m$ provenientes de los diferentes valores imputados.
+
+Para hacer este proceso en mi haríamos:
+
+```{r}
+fit <- pool(ppvtr.36 ~ first + b.marr + income + momage + momed + momrace, imp)
+display(fit)
+```
+
+#### 4. Validación {-}
+
+* Análisis de sensibilidad: Podemos evaluar la sensibilidad de los resultados de 
+los análisis agregados ante cambios en la especificación de los modelos dentro
+del conjunto de modelos posibles de acuerdo a la evaluación gráfica.
+
+* Validación cruzada. Podemos evaluar el supuesto MAR, creando datos faltantes
+de los datos imputados usando los mecansimos de faltantes que suponemos. 
+Reimputamos y comparamos.
+
+### Otros aspectos a tomar en cuenta
+
+Imputación de datos colineales. El paquete _mi_ tiene estrategias para dos 
+casos: correlación perfecta y restricciones aditivas.
+
+* Correlación perfecta. En muchos datos una variable aparece más de una vez, 
+en distintas escalas. Por ejemplo, podríamos tener PIB per cápita en pesos y 
+en miles de pesos. En este caso, si el patrón de faltantes es el mismo en ambas
+variables, _mi()_ incluirá sólo una de las variables duplicadas como parte del
+proceso iterativo y después copiará los valores a la variable no imputada.
+
+* Restricciones aditivas. 
+
+
+### Recursos adicionales
+
+* [Statistical Analysis with Missing Data](http://www.amazon.com/Statistical-Analysis-Missing-Roderick-Little/dp/0471183865) Little, Rubin.
+
+* [Data Analysis Using Regression and Multilevel/Hierarchical Models](http://www.cambridge.org/am/academic/subjects/statistics-probability/statistical-theory-and-methods/data-analysis-using-regression-and-multilevelhierarchical-models) 
+cap. 25, Gelman, Hill.
+
+* [A multivariate technique for multiply imputing missing values using a sequence of regression models](http://www5.statcan.gc.ca/olc-cel/olc.action?ObjId=12-001-X20010015857&ObjType=47&lang=en) Van Hoewyk, Lepkowski, 
+Solenberger y Raghunathan.
+
+* [Applied Missing Data Analysis](http://www.appliedmissingdata.com), Enders.
+
+* [The multiple imputation FAQ page](http://sites.stat.psu.edu/~jls/mifaq.html)
+
