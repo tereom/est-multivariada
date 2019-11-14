@@ -113,7 +113,7 @@ que lo veamos (estado o individuo):
 
 ![](img/gelman_bluered.png)
 
-### Modelos gráficos {-}
+### Modelos gráficos
 
 Un modelo gráfico es una red de variables aleatorias donde:
 

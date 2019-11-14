@@ -52,24 +52,26 @@ Referencias: @koller, @Whittaker, @bnlearn, @hastie
 
 Referencias: @wasserman, @bishop, @Whittaker
 
+
 4. Variables latentes	
 	+ Algoritmo Esperanza-Maximización.
 	+ Datos faltantes.
 	+ Clase latentes, mezclas gaussianas y análisis de factores.
 	+ Modelos markovianos de estados ocultos.
 
-Referencias: @wasserman
+Referencias: @wasserman, @gelman-hill, @rubin
 
-5. Modelos jerárquicos
-
-Referencias: @gelman-hill, @gelman-bayesian
-
-6. Modelos para datos espaciales y temporales
+5. Modelos para datos espaciales y temporales
     + Estadística espacial.
     + Modelos de espacio de estados.
 
 Referencias: @banerjee
 
+7. Modelos jerárquicos
+    + MCMC
+    + Stan
+
+Referencias: @gelman-hill, @gelman-bayesian
 
 #### Software {-}
 
