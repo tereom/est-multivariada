@@ -1,4 +1,4 @@
-# Estadística espacial
+# Datos espaciales
 
 La estadística espacial tiene aplicaciones en áreas como climatología, ecología, 
 salud y bienes racíces, esto se debe a que en estas áreas es común contar con 
@@ -60,7 +60,7 @@ ggplot(data = US, aes(long, lat)) +
   theme_nothing(legend = TRUE)
 ```
 
-![](../../computo/img/manicule2.jpg) ¿Qué preguntas interesantes puedes
+![](img/manicule2.jpg) ¿Qué preguntas interesantes puedes
 responder?
 
 
@@ -1182,9 +1182,9 @@ ggplot(grid.xy, aes(x = Var1, y = Var2, colour = preds.uk.c)) +
   scale_colour_brewer(palette = "Blues")
 
 # varianzas
-grid.xy$se.uk <- sqrt(kc.uk.grid$krige.var)
-ggplot(grid.xy, aes(x = Var1, y = Var2, colour = se.uk)) +
-  geom_point(size = 2.3)
+# grid.xy$se.uk <- sqrt(kc.uk.grid$krige.var)
+# ggplot(grid.xy, aes(x = Var1, y = Var2, colour = se.uk)) +
+#   geom_point(size = 2.3)
 ```
 
 
