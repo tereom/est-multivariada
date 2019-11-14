@@ -1,25 +1,3 @@
-```{r include=FALSE, cache=FALSE}
-library(tidyverse)
-knitr::opts_chunk$set(
-    comment = "#>",
-    collapse = TRUE,
-    fig.align = "center", 
-    error = FALSE
-)
-comma <- function(x) format(x, digits = 2, big.mark = ",")
-ggplot2::theme_set(ggplot2::theme_light())
-```
-```{r include=FALSE, cache=FALSE}
-library(tidyverse)
-knitr::opts_chunk$set(
-    comment = "#>",
-    collapse = TRUE,
-    fig.align = "center", 
-    error = FALSE
-)
-comma <- function(x) format(x, digits = 2, big.mark = ",")
-ggplot2::theme_set(ggplot2::theme_light())
-```
 # Redes bayesianas
 
 Los paquetes que usaremos en esta sección son:
@@ -40,93 +18,6 @@ BiocManager::install("Rgraphviz")
 
 Y las referencias son @koller, @ross y @wasserman.
 
-## Intoducción: Modelos gráficos
-
-Un modelo gráfico es una red de variables aleatorias donde:
-
-* Nodos representan variables aleatorias.
-
-* Arcos (dirigidos o no) representan dependencia
-
-Los dos esquemas generales para representar dependencias/independiencias 
-(condicionales) de forma gráfica son los modelos dirigidos (redes bayesianas) y 
-no dirigidos (redes markovianas).
-
-Nos enfocaremos en **modelos dirigidos** veamos un ejemplo de una red de seguros 
-de auto.
-
-En este ejemplo nos interesa entender los patrones de dependencia entre 
-variables como edad, calidad de conductor y tipo de accidente:
-
-```{r echo=FALSE, message=FALSE}
-library(bnlearn)
-
-head(insurance)
-insurance_dat <- insurance_dat <- insurance[, c('Age', 'GoodStudent', 
-    'SocioEcon', 'RiskAversion', 'Accident','DrivQuality')]
-
-blacklist <- data.frame(from = c('DrivQuality','Accident'), 
-    to = c('Age','DrivQuality'))
-```
-
-Aprendemos la estructura de la red:
-
-```{r}
-insurance_gm <- hc(insurance_dat, blacklist = blacklist)
-plot(insurance_gm)
-insurance.fit <- bn.fit(insurance_gm, data = insurance_dat, 
-                        method = 'bayes', iss = 1)
-```
-
-¿Cómo interpretar esta gráfica?
-
-Vemos por ejemplo como mucho de la asociación entre edad y tipo de accidente 
-desaparece cuando condicionamos a calidad de conductor.
-
-```{r}
-prop.table(table(insurance$Age, insurance$Accident), margin = 1)
-prop.table(table(insurance$Age, insurance$Accident, insurance$DrivQuality), 
-           margin = c(1, 3))
-```
-
-También podemos entender cómo depende calidad de conductor de edad y aversión al 
-riesgo (modelo local para DrvQuality):
-
-```{r, fig.height=3.2, fig.width=7}
-prop_tab_q <- prop.table(table(insurance$DrivQuality, insurance$RiskAversion, insurance$Age), c(2, 3))
-prop_tab_q
-
-df_q <- data.frame(prop_tab_q)
-names(df_q) <- c('DrvQuality', 'RiskAversion', 'Age', 'Prop')
-ggplot(df_q, aes(x = Age, y = Prop, colour = RiskAversion, 
-                 group = RiskAversion)) + 
-  geom_line() + facet_wrap(~DrvQuality) +
-  geom_point()
-```
-
-Otras asociaciones con _DrvQuality_ podemos entenderlas a través de estas
-dos variables: edad y aversión al riesgo.
-Veremos cómo modelar estas estructuras (además de usar las tablas, que corresponden
-a estimación de máxima verosimilitud sin restricciones, podemos usar por ejemplo
-GLMs).
-
-#### ¿Por qué modelos gráficos?  {-}
-
-* Usando modelos gráficos podemos representar de manera compacta y atractiva
-distribuciones de probabilidad entre variables aleatorias.
-
-* Auxiliar en el diseño de modelos.  
-  + Fácil combinar información proveniente de los datos con conocimiento de 
-  expertos.
-
-* Proveen un marco general para el estudio de modelos más específicos. Muchos
-de los modelos probabilísticos multivariados clásicos son casos particulares 
-del formalismo general de modelos gráficos (mezclas gaussianas, modelos de 
-espacio de estados ocultos, análisis de factores, filtro de Kalman,...).
-
-* Juegan un papel importante en el diseño y análisis de algoritmos de
-aprendizaje máquina.
-
 ## Gráficas dirigidas
 
 Una gráfica dirigida ${\mathcal G}$ es un conjunto de vértices junto con
@@ -142,6 +33,7 @@ de un vértice y regresando al mismo (ciclos).
 
 ```{r, fig.height=4, fig.width = 5, warning=FALSE}
 library(igraph, warn.conflicts = FALSE)
+library(bnlearn)
 gr <- graph(c(1, 2, 3, 2, 3, 4))
 plot(gr, 
   vertex.label = c('Dieta', 'Enf. corazón', 'Fuma', 'Tos'), 
