@@ -6,7 +6,9 @@ multivariada que es difícil de verificar. Generalmente, se considera que la
 pregunta interesante es si los datos son suficientemente cercanos a normalidad 
 para aplicar un procedimiento dado. Existen diagnósticos, pero aquí consideramos
 que estos modelos gaussianos, típicamente, pueden utilizarse más como 
-procedimientos exploratorios
+procedimientos exploratorios.
+
+Las referencias para esta sección son @Whittaker
 
 ## Distribución normal multivariada
 
@@ -134,11 +136,12 @@ round(parciales_D, 2)
 ```
 
 <div class="clicker">
+
 ![](img/manicule2.jpg) En cada una de las imágenes de abajo
 indica si la estructura de la gráfica del lado derecho corresponde a la matriz
 de correlación parcial (cuadro indica valor distinto a cero y vacío indica 
 cero).  
-<img src="imagenes/grafs_mats.png" />
+<img src="img/grafs_mats.png" />
 a. Arriba izquierda: Verdadero  
 b. Arriba derecha: Verdadero  
 c. Abajo izquierda: Verdadero  
@@ -237,7 +240,7 @@ de precisión.
 En este ejemplo consideramos las estaturas de los dos padres y de dos de sus
 hijas seleccionados al azar (entre las familias que tienen al menos dos hijas).
 
-```{r, echo=FALSE, eval=FALSE}
+```{r, echo=FALSE, eval=TRUE, warning=FALSE}
 library(tidyr)
 library(dplyr)
 library(HistData)
@@ -248,12 +251,11 @@ set.seed(228)
 dat <- GaltonFamilies %>%
   filter(gender == "female") %>%
   group_by(family) %>%
-  mutate(id = 1, n_female = n()) %>%
+  dplyr::mutate(n_female = n()) %>%
   filter(n_female > 1) %>%
-  mutate(id = as.integer(cumsum(id)),
-    id = sample(id)) %>%
-  top_n(2, id) %>%
-  mutate(id = 1:2)
+  sample_n(size = 2) %>% 
+  mutate(id = 1:2) %>% 
+  ungroup()
 
 glimpse(dat)
 
@@ -267,40 +269,10 @@ names(dat_w)[3:4] <- c('h1','h2')
 sigma <- var(dat_w)
 sigma
 solve(sigma)
-mod_1 <- cmod(~.^1, data = dat_w)
-dev.off()
-plot(mod_hijas <- forward(mod_1, type='unrestricted'))
-```
-
-```{r}
-library(plyr)
-library(gRim)
-library(HistData)
-data(GaltonFamilies)
-dat <- GaltonFamilies
-dat.2 <- ddply(dat, c('family'), function(df){
-  df$id_child <- sample(1:nrow(df), nrow(df))
-  df
-})
-dat.female <- subset(dat.2,  gender=='female')
-dat.female <- ddply(dat.female, c('family'), transform,
-
-  num.female=length(childHeight))
-
-dat.female.2 <- subset(dat.female, num.female>1)
-set.seed(28)
-dat.3 <- ddply(dat.female.2, c('family'), function(df){
-  df$id_child <- sample(1:nrow(df), nrow(df))
-  subset(df, id_child<3)
-})
-library(reshape2)
-dat.4 <- dcast(dat.3, family+father+mother~ id_child, value.var='childHeight')
-names(dat.4)[c(4,5)] <- c('h1','h2')
-sigma <- var(dat.4[, c('father','mother', 'h1','h2')])
-sigma
-solve((sigma))
-mod.1 <- cmod(~.^1, data=dat.4[,c('father','mother', 'h1','h2')])
-plot(mod_hijas <- forward(mod.1, type = 'unrestricted'))
+mod <- cmod(~.^1, data = dat_w)
+mod_hijas <- forward(mod, type='unrestricted')
+mod_hijas <- update(mod_hijas, list(dedge = ~h1:h2))
+plot(mod_hijas)
 ```
 
 Podemos examinar la matriz de precisión ajustada:
@@ -314,39 +286,39 @@ y para checar el ajuste comparamos la matriz de covarianzas empírica
 con la ajustada:
 
 ```{r}
-round(cor(dat.4[, -1]), 2)
+round(cor(dat_w), 2)
 round(cov2cor(solve(D)), 2)
 ```
 
 Podemos comparar con
 
 ```{r}
-mod.hijas.2 <- update(mod_hijas, list(dedge = ~mother:father))
-plot(mod.hijas.2)
-mod.hijas.2
+mod_hijas_2 <- update(mod_hijas, list(dedge = ~mother:father))
+plot(mod_hijas_2)
+mod_hijas_2
 ```
 
 
 ```{r}
-mod.hijas.3 <- update(mod_hijas, list(dedge=~father:h1))
-plot(mod.hijas.3)
-mod.hijas.3
+mod_hijas_3 <- update(mod_hijas, list(dedge=~father:h1))
+plot(mod_hijas_3)
+mod_hijas_3
 ```
 
 Nótese que la estimación de la matriz de varianza y covarianza está cercana
 a la empírica:
 
 ```{r}
-D <- mod.hijas.2$fitinfo$K
-round(cor(dat.4[,-1]),2)
+D <- mod_hijas_2$fitinfo$K
+round(cor(dat_w), 2)
 round(cov2cor(solve(D)),2)
 ```
 
 Mientras que eliminar father-h1 muestra un desajuste más considerable:
 
 ```{r}
-D <- mod.hijas.3$fitinfo$K
-round(cor(dat.4[,-1]),2)
+D <- mod_hijas_3$fitinfo$K
+round(cor(dat_w), 2)
 round(cov2cor(solve(D)),2)
 ```
 
@@ -438,7 +410,7 @@ ggplot(bodyfat.2, aes(x=biceps, y=estatura)) +
 
 Comparando las matrices de correlaciones.
 
-```{r}
+```{r, warning=FALSE}
 D <- mod.3$fitinfo$K
 round(cor(bodyfat.1[,]),2)
 round(cov2cor(solve(D)),2)
