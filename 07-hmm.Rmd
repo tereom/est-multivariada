@@ -20,6 +20,11 @@ discretas.
 2. *Modelos dinámicos lineales*: cuando las variables latentes son gaussianas. 
 Las observadas generalmente son numéricas.
 
+En esta sección nos concentramos en modelos markovianos de estados escondidos, 
+y usaremos los paquetes: `flexmix` y `depmixS4`.
+
+## Motivación
+
 **Ejemplo: serie de terremotos.** La siguiente serie cuenta el número de 
 temblores de magnitud 7 o más en el mundo, desde 1900 a 2006 ([Hidden Markov 
 Models for Time Series](http://www.crcpress.com/product/isbn/9781584885733), de Zucchini y MacDonald):
@@ -214,7 +219,7 @@ acf(rnorm(150))
 acf(rpois(150, 20))
 ```
 
-### Modelando la dependencia temporal
+#### Modelando la dependencia temporal {-}
 
 Si queremos capturar la estrucutra temporal de los datos, o hacer predicciones
 para datos futuros, es necesario modelar la estructura temporal explícita o 
@@ -977,7 +982,7 @@ a través del algoritmo hacia adelante-hacia atrás.
 
 4. Iteramos entre 2 y 3.
 
-## Algoritmo de Viterbi
+### Algoritmo de Viterbi
 
 En muchas de las aplicaciones de HMM nos interesa hacer inferencia de la
 secuencia de estados $\{S_1,...,S_T\}$, en este caso el criterio de optimización
