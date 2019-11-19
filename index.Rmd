@@ -44,7 +44,7 @@ Referencias: @ross
 	+ Modelos locales.
 	+ Aprendizaje de estructura de redes bayesianas.
 
-Referencias: @koller, @Whittaker, @bnlearn, @hastie
+Referencias: @koller, @Whittaker, @bnlearn, @hastie, @R-bnlearn, @R-gRain.
 
 3. Redes markovianas
     + Modelos log-lineales.

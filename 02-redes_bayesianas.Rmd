@@ -2,21 +2,20 @@
 
 Los paquetes que usaremos en esta sección son:
 
-* CRAN: tidyverse (dplyr, ggplot2, purrr), bnlearn, 
-BiocManager, igraph, gRain.
+* CRAN: @R-tidyverse (dplyr, ggplot2, purrr), @R-bnlearn, @R-igraph, @R-gRain.
 
 ```
-install.packages(c("tidyverse", "bnlearn", "BiocManager", "igraph, "gRain"))
+install.packages(c("tidyverse", "bnlearn", "igraph, "gRain", "BiocManager"))
 ```
 
-* Bioconductor: Rgraphviz, RBGL
+* Bioconductor: @R-Rgraphviz, @R-RBGL:
 
 ```
 install.packages("BiocManager")
 BiocManager::install("Rgraphviz")
 ```
 
-Y las referencias son @koller, @ross y @wasserman.
+Y las referencias bibliográficas son @koller, @ross y @wasserman.
 
 ## Gráficas dirigidas
 
