@@ -499,7 +499,7 @@ a ningún otro nodo.
 Por ejemplo, en la siguiente gráfica, el nodo rojo, dado los nodos azules, es
 condicionalmente independiente de los nodos grises:
 
-```{r}
+```{r, warning=FALSE}
 gr <- graph(c(1, 4, 2, 5, 3, 5, 4, 6, 5, 6, 7, 8, 6, 8, 8, 9, 8, 10))
 plot(gr,  
   vertex.size = 20,  
