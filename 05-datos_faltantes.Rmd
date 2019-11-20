@@ -6,7 +6,7 @@ bayesianas y después abordamos el problema en un contexto más general.
 
 Discutiremos distintos mecanismos de censura de datos y técnicas de imputación.
 
-Usaremos el paquete de R `mi` y `visdat`.
+Usaremos los paquetes @R-mi y @R-visdat.
 
 La referencia principal es @gelman-hill, @rubin.
 

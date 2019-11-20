@@ -15,10 +15,7 @@ condicionados).
 posible utilizar modelos locales de probabilidades condicionales como en los 
 modelos dirigidos.
 
-En esta sección utilizaremos los paquetes:
-
-* `gRbase`  
-* `gRim`
+En esta sección utilizaremos los paquetes @R-gRbase y @R-gRim.  
 
 Y las principales referencias son @bishop, @Whittaker, @soren.
 
