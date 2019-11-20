@@ -4,6 +4,8 @@ author: "María Teresa Ortiz, Felipe González"
 site: bookdown::bookdown_site
 documentclass: book
 bibliography: [book.bib]
+nocite: |
+    @advr, @r4ds, @R-ggplot2, @R-dplyr, @R-purrr, @R-tidyr
 biblio-style: apalike
 link-citations: yes
 github-repo: tereom/est-multivariada
@@ -71,7 +73,7 @@ Referencias: @banerjee
     + MCMC
     + Stan
 
-Referencias: @gelman-hill, @gelman-bayesian
+Referencias: @gelman-hill, @gelman-bayesian, @kruschke
 
 #### Software {-}
 
