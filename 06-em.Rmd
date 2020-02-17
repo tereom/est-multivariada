@@ -3,7 +3,7 @@
 En esta sección estudiaremos modelos de variable latente y el algoritmo de 
 esperanza-maximización.
 
-### Recordatorio de datos faltantes
+### Recordatorio de datos faltantes {-}
 
 1. El modelo para los datos completos está parametrizado con $\theta$:
   $$p_{\theta}(y)$$
@@ -596,7 +596,7 @@ casos de variable latente continua. Una motivación para estos modelos es que
 muchos conjuntos de datos tienen la propiedad que los puntos caen en un 
 variedad de dimensión mucho menor a la dimensión original de los datos.
 
-Para entender esta idea consideremos una base de datos consrtuida con uno de 
+Para entender esta idea consideremos una base de datos construida con uno de 
 los dígitos de la base de datos [mnist](http://yann.lecun.com/exdb/mnist/), 
 esta imagen esta representada por una matriz de $64 \times 64$ pixeles, ahora
 insertamos este dígito en una matriz más grande de $100 \times 100$ agregando
@@ -606,15 +606,15 @@ del dígito.
 <img src="img/digit_rotate.jpg" style="width: 600px;"/>
 
 Cada una de las imágenes resultantes está representada por un punto en el 
-espacio de dimensión $100 \times 100 = 10,000$; sin embargo, en una base
-de datos construida de esta manera solamente hay 3 grados de libertad de 
-variabilidad, estas corresponden a las rotaciones, trasalación vertical y 
+espacio de dimensión $100 \times 100 = 10,000$; sin embargo, en una tabla
+de datos construida de esta manera solamente hay 3 grados de libertad, 
+estas corresponden a las rotaciones, trasalación vertical y 
 traslación horizontal. 
 
 Para datos reales habrá más grados de libertad debido por una parte a
-escalamiento y por otra habrá múltiples grados adicionales debidas a 
-deformaciones debidas a la variabilidad en la escritura de un individuo y entre
-individuos. Aún así, la la dimensionalidad de los grados de libertad es mucho
+escalamiento y por otra habrá múltiples grados adicionales resultantes de 
+deformaciones ante la variabilidad en la escritura de un individuo y entre
+individuos. Aún así, la dimensionalidad de los grados de libertad es mucho
 menor que la de los datos completos.
 
 ```{r, fig.width=9.4, fig.height=2.5}
@@ -642,10 +642,8 @@ las variables latentes y las observadas, además de usar dependencia lineal
 Gaussiana entre latentes y observables. Este escenario corresponde a PCA
 probabilítsico y a análisis de factores.
 
-## Componentes principales
-
-El análisis de componentes principales (PCA) es una técnica que se utiliza 
-con distintos objetivos:
+Por su partem el análisis de componentes principales (PCA) es una técnica que 
+se utiliza con distintos objetivos:
 
 1. Reducción de dimensionalidad.
 
@@ -669,7 +667,7 @@ entre los puntos y sus proyecciones.
 
 ### Formulación de máxima varianza
 
-Consideremos un vector de observaciones $(y^1,...,y^n)$ donde $y_i$ es de 
+Consideremos un vector de observaciones $(y_1,...,y_n)$ donde $y_i$ es de 
 dimensión $d$. Nuestro objetivo es proyectar los datos en un espacio de 
 dimensión $M<D$ maximizando la varianza de la proyección.
 
